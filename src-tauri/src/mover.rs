@@ -64,15 +64,13 @@ pub fn move_many(moves: &[PlannedMove]) -> Vec<MoveOutcome> {
 
 /// Hernoemt zonder ooit een bestaand doel te vervangen: de controle zit in de systeemaanroep zelf
 /// en niet in een aparte stap ervoor. `MoveFileExW` met vlaggen 0 vervangt niets, kopieert niet
-/// naar een andere schijf en geeft `AlreadyExists` als het doel er is.
+/// naar een andere schijf en geeft `AlreadyExists` als het doel er is. De paden gaan verbatim
+/// mee, zodat ook paden boven MAX_PATH (260 tekens) werken zoals bij `std::fs::rename`.
 #[cfg(windows)]
 fn rename_no_replace(src: &Path, dest: &Path) -> io::Result<()> {
-    use std::iter::once;
-    use std::os::windows::ffi::OsStrExt;
     use windows_sys::Win32::Storage::FileSystem::MoveFileExW;
 
-    let wide = |p: &Path| -> Vec<u16> { p.as_os_str().encode_wide().chain(once(0)).collect() };
-    let (src, dest) = (wide(src), wide(dest));
+    let (src, dest) = (wide_verbatim(src), wide_verbatim(dest));
     // SAFETY: beide buffers zijn met 0 afgesloten en leven langer dan de aanroep.
     let moved = unsafe { MoveFileExW(src.as_ptr(), dest.as_ptr(), 0) };
     if moved == 0 {
@@ -80,6 +78,36 @@ fn rename_no_replace(src: &Path, dest: &Path) -> io::Result<()> {
     } else {
         Ok(())
     }
+}
+
+/// Het pad als met 0 afgesloten UTF-16 in verbatim vorm: `C:\map` wordt `\\?\C:\map` en
+/// `\\server\share\map` wordt `\\?\UNC\server\share\map`. Een absoluut pad wordt eerst genormaliseerd
+/// (schuine strepen, `.` en `..`), want een verbatim pad wordt niet meer genormaliseerd. Paden die
+/// al verbatim zijn en relatieve paden blijven zoals ze zijn.
+#[cfg(windows)]
+fn wide_verbatim(path: &Path) -> Vec<u16> {
+    use std::iter::once;
+    use std::os::windows::ffi::OsStrExt;
+    use std::path::{Component, Prefix};
+
+    let path = if path.is_absolute() {
+        std::path::absolute(path).unwrap_or_else(|_| path.to_path_buf())
+    } else {
+        path.to_path_buf()
+    };
+    let (prefix, skip) = match path.components().next() {
+        Some(Component::Prefix(p)) if path.is_absolute() => match p.kind() {
+            Prefix::Disk(_) => (r"\\?\", 0),
+            Prefix::UNC(..) => (r"\\?\UNC\", 2),
+            _ => ("", 0),
+        },
+        _ => ("", 0),
+    };
+    prefix
+        .encode_utf16()
+        .chain(path.as_os_str().encode_wide().skip(skip))
+        .chain(once(0))
+        .collect()
 }
 
 /// Buiten Windows bestaat er in `std` geen rename zonder vervangen; Netjes draait enkel op Windows,
@@ -230,6 +258,46 @@ mod tests {
 
         assert_eq!(fs::read(&target).unwrap(), b"nieuw");
         assert!(!src.exists());
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn move_works_when_the_path_is_longer_than_260_characters() {
+        let tmp = tempdir().unwrap();
+        let root = tmp.path().join("a".repeat(200));
+        fs::create_dir_all(&root).unwrap();
+        ensure_folders(&root, &[Category::Fotos]).unwrap();
+        let name = format!("{}.jpg", "b".repeat(50));
+        let src = root.join(&name);
+        fs::write(&src, b"lang pad").unwrap();
+        let m = planned(5, &src, &root, &name, Category::Fotos);
+        assert!(m.dest.len() > 260, "{}", m.dest.len());
+
+        let outcome = move_one(&m);
+
+        assert!(outcome.ok, "{:?}", outcome.error);
+        let dest = PathBuf::from(outcome.dest.unwrap());
+        assert_eq!(dest, root.join("Foto's").join(&name));
+        assert_eq!(fs::read(&dest).unwrap(), b"lang pad");
+        assert!(!src.exists());
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn verbatim_prefixes_absolute_paths_only() {
+        let text = |p: &str| {
+            let wide = wide_verbatim(Path::new(p));
+            assert_eq!(wide.last(), Some(&0));
+            String::from_utf16(&wide[..wide.len() - 1]).unwrap()
+        };
+        assert_eq!(text(r"C:\Users\x\a.jpg"), r"\\?\C:\Users\x\a.jpg");
+        assert_eq!(text("C:/Users/x/a.jpg"), r"\\?\C:\Users\x\a.jpg");
+        assert_eq!(
+            text(r"\\server\share\map\a.jpg"),
+            r"\\?\UNC\server\share\map\a.jpg"
+        );
+        assert_eq!(text(r"\\?\C:\Users\a.jpg"), r"\\?\C:\Users\a.jpg");
+        assert_eq!(text(r"map\a.jpg"), r"map\a.jpg");
     }
 
     #[test]
