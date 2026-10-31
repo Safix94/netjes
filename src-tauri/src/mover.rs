@@ -5,7 +5,7 @@ use std::fs;
 use std::io::{self, ErrorKind};
 use std::path::{Path, PathBuf};
 
-const OUTSIDE: &str = "Het bestand ligt buiten de map";
+pub(crate) const OUTSIDE: &str = "Het bestand ligt buiten de map";
 const INVALID_DEST: &str = "Ongeldige bestemming";
 const NO_FREE_NAME: &str = "Geen vrije bestandsnaam gevonden";
 /// Een rename kan een vrije naam verliezen aan een ander proces; zoveel nieuwe namen proberen we.
@@ -118,7 +118,8 @@ fn rename_no_replace(src: &Path, dest: &Path) -> io::Result<()> {
 }
 
 /// Verplaatst `src` naar `dest`, of naar de eerstvolgende vrije naam als `dest` al bezet is, en
-/// geeft het uiteindelijke pad terug. Nooit vervangen: zie `rename_no_replace`.
+/// geeft het uiteindelijke pad terug. Nooit vervangen: zie `rename_no_replace`. Controleert niet
+/// of de paden binnen een bepaalde map blijven; dat doet de aanroeper.
 pub fn move_path_no_replace(src: &Path, dest: &Path) -> io::Result<PathBuf> {
     for _ in 0..MAX_ATTEMPTS {
         let candidate = unique_dest(dest);

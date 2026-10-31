@@ -3,7 +3,7 @@
 //! gebruikt dezelfde no-replace-verplaatsing als het opruimen zelf: er wordt nooit iets overschreven
 //! en nooit iets verwijderd, behalve lege mappen die Netjes zelf aanmaakte.
 
-use crate::mover::{MoveOutcome, move_path_no_replace};
+use crate::mover::{MoveOutcome, OUTSIDE, move_path_no_replace};
 use crate::paths::app_data_dir;
 use crate::planner::PlannedMove;
 use serde::{Deserialize, Serialize};
@@ -14,6 +14,11 @@ use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 const LOG_VERSION: u32 = 1;
+/// Na zoveel teruggezette bestanden gaat het log al naar schijf, zodat een crash of een mislukte
+/// laatste `save` nooit meer dan dit aantal bestanden als `Moved` laat staan terwijl ze al terug zijn.
+const CHECKPOINT_EVERY: usize = 50;
+/// `MoveOutcome::id` van de fout "het log kon niet bewaard worden"; geen echt record heeft dit id.
+pub const LOG_SAVE_FAILED_ID: u32 = u32::MAX;
 const NO_LOG: &str = "Er is geen ongedaan-maken-log voor deze map";
 
 #[derive(Clone, Serialize, Deserialize, Debug, PartialEq)]
@@ -54,6 +59,8 @@ pub struct UndoInfo {
 #[derive(Serialize, Debug)]
 pub struct UndoResult {
     pub restored: u32,
+    /// Per mislukt bestand een uitkomst met zijn `id`. Kon het log zelf niet bewaard worden, dan
+    /// staat er één extra uitkomst met `id == LOG_SAVE_FAILED_ID`; `restored` blijft dan kloppen.
     pub errors: Vec<MoveOutcome>,
 }
 
@@ -170,6 +177,12 @@ pub fn info_in(log_dir: &Path, root: &Path) -> Option<UndoInfo> {
 /// intussen weer iets staat. Gelukt wordt `Restored`; mislukt blijft `Moved` en komt in `errors`.
 /// Met `remove_created_folders` (ongedaan maken) verdwijnen daarna de door Netjes aangemaakte
 /// mappen die nu leeg zijn; zonder (rommelig maken) blijven alle mappen staan. Het log blijft bestaan.
+///
+/// Enkel bestanden waarvan `src` en `dest` in `root` liggen worden aangeraakt; de rest krijgt een
+/// fout "buiten de map". Het log gaat om de `CHECKPOINT_EVERY` bestanden en op het einde naar schijf.
+/// Mislukt dat bewaren, dan stopt het terugzetten en komt de fout als uitkomst met
+/// `LOG_SAVE_FAILED_ID` in `errors`: een `Ok` met correcte `restored`, nooit een kale `Err`
+/// terwijl er al bestanden verplaatst zijn.
 pub fn restore(root: &Path, remove_created_folders: bool) -> io::Result<UndoResult> {
     restore_in(&default_log_dir(), root, remove_created_folders)
 }
@@ -185,34 +198,100 @@ pub fn restore_in(
             errors: Vec::new(),
         });
     };
+    let canonical_root = fs::canonicalize(root)?;
+    let moved: Vec<usize> = log
+        .records
+        .iter()
+        .enumerate()
+        .filter(|(_, r)| r.status == RecordStatus::Moved)
+        .map(|(index, _)| index)
+        .collect();
     let mut restored = 0;
     let mut errors = Vec::new();
-    for record in log
-        .records
-        .iter_mut()
-        .filter(|r| r.status == RecordStatus::Moved)
-    {
-        match move_path_no_replace(Path::new(&record.dest), Path::new(&record.src)) {
-            Ok(_) => {
+    let mut unsaved = 0;
+    let mut checkpoint_failed = false;
+    for index in moved {
+        let Some(record) = log.records.get_mut(index) else {
+            continue;
+        };
+        match restore_record(record, &canonical_root) {
+            Ok(()) => {
                 record.status = RecordStatus::Restored;
                 restored += 1;
+                unsaved += 1;
             }
-            Err(e) => errors.push(MoveOutcome {
+            Err(error) => errors.push(MoveOutcome {
                 id: record.id,
                 ok: false,
                 dest: None,
-                error: Some(e.to_string()),
+                error: Some(error),
             }),
+        }
+        if unsaved >= CHECKPOINT_EVERY {
+            match save(log_dir, root, &log) {
+                Ok(()) => unsaved = 0,
+                Err(e) => {
+                    errors.push(save_failure(&e));
+                    checkpoint_failed = true;
+                    break;
+                }
+            }
         }
     }
     if remove_created_folders {
         for folder in &log.folders_created {
-            // `remove_dir` weigert een map met inhoud: precies de bescherming die we willen.
-            let _ = fs::remove_dir(folder);
+            remove_created_folder(folder, &canonical_root);
         }
     }
-    save(log_dir, root, &log)?;
+    if unsaved > 0 {
+        // Na een mislukt checkpoint is de fout al gemeld; deze laatste poging redt wat nog kan.
+        match save(log_dir, root, &log) {
+            Err(e) if !checkpoint_failed => errors.push(save_failure(&e)),
+            _ => {}
+        }
+    }
     Ok(UndoResult { restored, errors })
+}
+
+/// Zet één record terug, maar enkel als de mappen van `src` en `dest` in `root` liggen.
+/// `root` is al gecanoniseerd.
+fn restore_record(record: &UndoRecord, root: &Path) -> Result<(), String> {
+    let (src, dest) = (Path::new(&record.src), Path::new(&record.dest));
+    ensure_parent_inside(src, root)?;
+    ensure_parent_inside(dest, root)?;
+    move_path_no_replace(dest, src)
+        .map(|_| ())
+        .map_err(|e| e.to_string())
+}
+
+fn ensure_parent_inside(path: &Path, root: &Path) -> Result<(), String> {
+    let parent = path.parent().ok_or(OUTSIDE)?;
+    let parent = fs::canonicalize(parent).map_err(|e| e.to_string())?;
+    if parent.starts_with(root) {
+        Ok(())
+    } else {
+        Err(OUTSIDE.to_string())
+    }
+}
+
+/// Verwijdert een door Netjes aangemaakte map, maar enkel als ze onder `root` ligt (nooit `root`
+/// zelf) en leeg is: `remove_dir` weigert een map met inhoud, precies de bescherming die we willen.
+fn remove_created_folder(folder: &str, root: &Path) {
+    let Ok(folder) = fs::canonicalize(folder) else {
+        return;
+    };
+    if folder != root && folder.starts_with(root) {
+        let _ = fs::remove_dir(&folder);
+    }
+}
+
+fn save_failure(error: &io::Error) -> MoveOutcome {
+    MoveOutcome {
+        id: LOG_SAVE_FAILED_ID,
+        ok: false,
+        dest: None,
+        error: Some(format!("Het log kon niet bewaard worden: {error}")),
+    }
 }
 
 /// Schrijft naar `<naam>.json.tmp` en hernoemt dat over het echte log, zodat een crash nooit een
@@ -288,6 +367,34 @@ mod tests {
         (src, root.join("Foto's").join("a.jpg"))
     }
 
+    /// Een echte organize-run met `n` foto's (`f0.jpg`, `f1.jpg`, ...), in volgorde van id.
+    fn organize_many(log_dir: &Path, root: &Path, n: usize) -> Vec<(PathBuf, PathBuf)> {
+        let mut moves = Vec::new();
+        for i in 0..n {
+            let name = format!("f{i}.jpg");
+            let src = root.join(&name);
+            fs::write(&src, name.as_bytes()).unwrap();
+            moves.push(planned(u32::try_from(i).unwrap(), &src, root, &name));
+        }
+        let created = ensure_folders(root, &[Category::Fotos]).unwrap();
+        write_planned_in(log_dir, root, &moves, &created).unwrap();
+        let outcomes = move_many(&moves);
+        assert!(outcomes.iter().all(|o| o.ok));
+        apply_outcomes_in(log_dir, root, &outcomes).unwrap();
+        moves
+            .iter()
+            .map(|m| {
+                let name = Path::new(&m.src).file_name().unwrap();
+                (PathBuf::from(&m.src), root.join("Foto's").join(name))
+            })
+            .collect()
+    }
+
+    /// Laat elke volgende `save` falen: de tijdelijke naam is bezet door een map.
+    fn block_saves(log_dir: &Path, root: &Path) {
+        fs::create_dir(log_path_in(log_dir, root).with_extension("json.tmp")).unwrap();
+    }
+
     #[test]
     fn planned_then_outcomes_round_trip() {
         let log_dir = tempdir().unwrap();
@@ -353,8 +460,11 @@ mod tests {
             Path::new(&root.path().to_string_lossy().to_uppercase()),
         );
         assert_eq!(path, upper);
-        assert_eq!(name.len(), 64 + ".json".len());
-        assert!(name.ends_with(".json"));
+        let lowered = root.path().to_string_lossy().to_lowercase();
+        assert_eq!(
+            name,
+            format!("{}.json", blake3::hash(lowered.as_bytes()).to_hex())
+        );
         let other = tempdir().unwrap();
         assert_ne!(path, log_path_in(log_dir.path(), other.path()));
         let leftovers: Vec<_> = fs::read_dir(log_dir.path())
@@ -497,6 +607,132 @@ mod tests {
         let log = load_in(log_dir.path(), root.path()).unwrap().unwrap();
         assert_eq!(log.records[0].status, RecordStatus::Restored);
         assert_eq!(log.records[1].status, RecordStatus::Failed);
+    }
+
+    #[test]
+    fn restore_with_checkpoints_restores_every_file_and_saves_the_log() {
+        let log_dir = tempdir().unwrap();
+        let root = tempdir().unwrap();
+        let files = organize_many(log_dir.path(), root.path(), 2 * CHECKPOINT_EVERY + 20);
+
+        let result = restore_in(log_dir.path(), root.path(), true).unwrap();
+
+        assert_eq!(result.restored as usize, files.len());
+        assert!(result.errors.is_empty(), "{:?}", result.errors);
+        assert!(
+            files
+                .iter()
+                .all(|(src, dest)| src.exists() && !dest.exists())
+        );
+        let log = load_in(log_dir.path(), root.path()).unwrap().unwrap();
+        assert!(
+            log.records
+                .iter()
+                .all(|r| r.status == RecordStatus::Restored)
+        );
+        assert_eq!(info_in(log_dir.path(), root.path()).unwrap().count, 0);
+    }
+
+    #[test]
+    fn failing_final_save_still_reports_the_restored_files() {
+        let log_dir = tempdir().unwrap();
+        let root = tempdir().unwrap();
+        let files = organize_many(log_dir.path(), root.path(), 3);
+        block_saves(log_dir.path(), root.path());
+
+        let result = restore_in(log_dir.path(), root.path(), true).unwrap();
+
+        assert_eq!(result.restored, 3);
+        assert_eq!(result.errors.len(), 1, "{:?}", result.errors);
+        assert_eq!(result.errors[0].id, u32::MAX);
+        assert!(!result.errors[0].ok);
+        assert!(
+            result.errors[0]
+                .error
+                .as_deref()
+                .is_some_and(|e| !e.is_empty())
+        );
+        assert!(
+            files
+                .iter()
+                .all(|(src, dest)| src.exists() && !dest.exists())
+        );
+    }
+
+    #[test]
+    fn failing_checkpoint_stops_restoring_and_reports_the_save_error() {
+        let log_dir = tempdir().unwrap();
+        let root = tempdir().unwrap();
+        let files = organize_many(log_dir.path(), root.path(), CHECKPOINT_EVERY + 20);
+        block_saves(log_dir.path(), root.path());
+
+        let result = restore_in(log_dir.path(), root.path(), true).unwrap();
+
+        assert_eq!(result.restored as usize, CHECKPOINT_EVERY);
+        assert_eq!(result.errors.len(), 1, "{:?}", result.errors);
+        assert_eq!(result.errors[0].id, u32::MAX);
+        for (i, (src, dest)) in files.iter().enumerate() {
+            let done = i < CHECKPOINT_EVERY;
+            assert_eq!((src.exists(), dest.exists()), (done, !done), "bestand {i}");
+        }
+    }
+
+    #[test]
+    fn restore_refuses_records_that_point_outside_the_root() {
+        let log_dir = tempdir().unwrap();
+        let root = tempdir().unwrap();
+        let outside = tempdir().unwrap();
+        let (_, dest) = organize_one_photo(log_dir.path(), root.path());
+        let secret = outside.path().join("geheim.pdf");
+        fs::write(&secret, b"niet aanraken").unwrap();
+        let mut log = load_in(log_dir.path(), root.path()).unwrap().unwrap();
+        // Record 1: terugzetten naar een plek buiten de map. Record 2: een bestand van buiten de map binnenhalen.
+        log.records[0].src = outside.path().join("a.jpg").to_string_lossy().into_owned();
+        log.records.push(UndoRecord {
+            id: 2,
+            src: root
+                .path()
+                .join("binnen.pdf")
+                .to_string_lossy()
+                .into_owned(),
+            dest: secret.to_string_lossy().into_owned(),
+            status: RecordStatus::Moved,
+        });
+        save(log_dir.path(), root.path(), &log).unwrap();
+
+        let result = restore_in(log_dir.path(), root.path(), true).unwrap();
+
+        assert_eq!(result.restored, 0);
+        let ids: Vec<_> = result.errors.iter().map(|e| (e.id, e.ok)).collect();
+        assert_eq!(ids, vec![(1, false), (2, false)]);
+        assert!(result.errors.iter().all(|e| {
+            e.error
+                .as_deref()
+                .is_some_and(|m| m.contains("buiten de map"))
+        }));
+        assert_eq!(fs::read(&dest).unwrap(), b"foto");
+        assert!(!outside.path().join("a.jpg").exists());
+        assert_eq!(fs::read(&secret).unwrap(), b"niet aanraken");
+        assert!(!root.path().join("binnen.pdf").exists());
+        let log = load_in(log_dir.path(), root.path()).unwrap().unwrap();
+        assert!(log.records.iter().all(|r| r.status == RecordStatus::Moved));
+    }
+
+    #[test]
+    fn undo_never_removes_folders_outside_the_root_or_the_root_itself() {
+        let log_dir = tempdir().unwrap();
+        let root = tempdir().unwrap();
+        let outside = tempdir().unwrap();
+        let empty_outside = outside.path().join("leeg");
+        fs::create_dir(&empty_outside).unwrap();
+        let folders = vec![empty_outside.clone(), root.path().to_path_buf()];
+        write_planned_in(log_dir.path(), root.path(), &[], &folders).unwrap();
+
+        let result = restore_in(log_dir.path(), root.path(), true).unwrap();
+
+        assert_eq!(result.restored, 0);
+        assert!(empty_outside.is_dir());
+        assert!(root.path().is_dir());
     }
 
     #[test]
