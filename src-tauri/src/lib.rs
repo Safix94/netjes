@@ -1,6 +1,8 @@
 pub mod categories;
 pub mod dupes;
+pub mod mover;
 pub mod paths;
+pub mod planner;
 pub mod scan;
 
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
