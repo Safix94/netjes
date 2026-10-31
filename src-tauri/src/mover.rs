@@ -7,6 +7,9 @@ use std::path::{Path, PathBuf};
 
 const OUTSIDE: &str = "Het bestand ligt buiten de map";
 const INVALID_DEST: &str = "Ongeldige bestemming";
+const NO_FREE_NAME: &str = "Geen vrije bestandsnaam gevonden";
+/// Een rename kan een vrije naam verliezen aan een ander proces; zoveel nieuwe namen proberen we.
+const MAX_ATTEMPTS: usize = 10;
 
 /// Resultaat van één verplaatsing. `dest` is de definitieve bestemming na conflictoplossing.
 #[derive(Clone, Serialize, Debug)]
@@ -32,8 +35,10 @@ pub fn ensure_folders(root: &Path, cats: &[Category]) -> io::Result<Vec<PathBuf>
     Ok(created)
 }
 
-/// Verplaatst één bestand met één `fs::rename` naar een vrije naam. Overschrijft nooit, volgt
-/// geen symlinks en blijft binnen de gekozen map (die volgt uit `dest`: `root/<map>/<naam>`).
+/// Verplaatst één bestand met één rename naar een vrije naam. Op Windows weigert die rename zelf
+/// een bestaand doel (`rename_no_replace`), dus ook een bestand dat pas tijdens de verplaatsing
+/// verschijnt wordt nooit overschreven; dan kiest de volgende poging een andere naam. Volgt geen
+/// symlinks en blijft binnen de gekozen map (die volgt uit `dest`: `root/<map>/<naam>`).
 /// De doelmap moet al bestaan; daar zorgt de aanroeper voor via `ensure_folders`.
 pub fn move_one(m: &PlannedMove) -> MoveOutcome {
     match try_move(m) {
@@ -57,6 +62,33 @@ pub fn move_many(moves: &[PlannedMove]) -> Vec<MoveOutcome> {
     moves.iter().map(move_one).collect()
 }
 
+/// Hernoemt zonder ooit een bestaand doel te vervangen: de controle zit in de systeemaanroep zelf
+/// en niet in een aparte stap ervoor. `MoveFileExW` met vlaggen 0 vervangt niets, kopieert niet
+/// naar een andere schijf en geeft `AlreadyExists` als het doel er is.
+#[cfg(windows)]
+fn rename_no_replace(src: &Path, dest: &Path) -> io::Result<()> {
+    use std::iter::once;
+    use std::os::windows::ffi::OsStrExt;
+    use windows_sys::Win32::Storage::FileSystem::MoveFileExW;
+
+    let wide = |p: &Path| -> Vec<u16> { p.as_os_str().encode_wide().chain(once(0)).collect() };
+    let (src, dest) = (wide(src), wide(dest));
+    // SAFETY: beide buffers zijn met 0 afgesloten en leven langer dan de aanroep.
+    let moved = unsafe { MoveFileExW(src.as_ptr(), dest.as_ptr(), 0) };
+    if moved == 0 {
+        Err(io::Error::last_os_error())
+    } else {
+        Ok(())
+    }
+}
+
+/// Buiten Windows bestaat er in `std` geen rename zonder vervangen; Netjes draait enkel op Windows,
+/// dit houdt de bibliotheek compileerbaar.
+#[cfg(not(windows))]
+fn rename_no_replace(src: &Path, dest: &Path) -> io::Result<()> {
+    fs::rename(src, dest)
+}
+
 fn try_move(m: &PlannedMove) -> Result<PathBuf, String> {
     let src = Path::new(&m.src);
     let dest = Path::new(&m.dest);
@@ -74,9 +106,15 @@ fn try_move(m: &PlannedMove) -> Result<PathBuf, String> {
         return Err(OUTSIDE.to_string());
     }
 
-    let final_dest = unique_dest(dest);
-    fs::rename(src, &final_dest).map_err(|e| e.to_string())?;
-    Ok(final_dest)
+    for _ in 0..MAX_ATTEMPTS {
+        let candidate = unique_dest(dest);
+        match rename_no_replace(src, &candidate) {
+            Ok(()) => return Ok(candidate),
+            Err(e) if e.kind() == ErrorKind::AlreadyExists => continue,
+            Err(e) => return Err(e.to_string()),
+        }
+    }
+    Err(NO_FREE_NAME.to_string())
 }
 
 #[cfg(test)]
@@ -163,6 +201,35 @@ mod tests {
         assert!(!outcome.error.unwrap().is_empty());
         assert!(src.exists());
         assert!(!root.path().join("Foto's").join("vast.jpg").exists());
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn rename_no_replace_refuses_existing_target_and_leaves_both_untouched() {
+        let dir = tempdir().unwrap();
+        let src = dir.path().join("nieuw.txt");
+        let target = dir.path().join("doel.txt");
+        fs::write(&src, b"nieuw").unwrap();
+        fs::write(&target, b"oorspronkelijk").unwrap();
+
+        let err = rename_no_replace(&src, &target).unwrap_err();
+
+        assert_eq!(err.kind(), ErrorKind::AlreadyExists);
+        assert_eq!(fs::read(&target).unwrap(), b"oorspronkelijk");
+        assert_eq!(fs::read(&src).unwrap(), b"nieuw");
+    }
+
+    #[test]
+    fn rename_no_replace_moves_to_free_target() {
+        let dir = tempdir().unwrap();
+        let src = dir.path().join("nieuw.txt");
+        let target = dir.path().join("doel.txt");
+        fs::write(&src, b"nieuw").unwrap();
+
+        rename_no_replace(&src, &target).unwrap();
+
+        assert_eq!(fs::read(&target).unwrap(), b"nieuw");
+        assert!(!src.exists());
     }
 
     #[test]

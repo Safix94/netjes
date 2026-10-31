@@ -32,9 +32,9 @@ pub fn plan_moves(root: &Path, files: &[FileEntry]) -> Vec<PlannedMove> {
         .collect()
 }
 
-/// Geeft `dest` terug als daar niets staat. Anders " (2)", " (3)", ... vóór de volledige
-/// extensieketen: `archief.tar.gz` wordt `archief (2).tar.gz`, een naam zonder punt krijgt de
-/// teller achteraan. Een naam die met een punt begint (`.env`) heeft geen extensie.
+/// Geeft `dest` terug als daar niets staat. Anders " (2)", " (3)", ... vóór de extensie:
+/// `versie 1.2 final.pdf` wordt `versie 1.2 final (2).pdf`, `archief.tar.gz` wordt
+/// `archief (2).tar.gz` en een naam zonder extensie krijgt de teller achteraan.
 pub fn unique_dest(dest: &Path) -> PathBuf {
     if is_free(dest) {
         return dest.to_path_buf();
@@ -42,16 +42,37 @@ pub fn unique_dest(dest: &Path) -> PathBuf {
     let Some(name) = dest.file_name().map(|n| n.to_string_lossy()) else {
         return dest.to_path_buf();
     };
-    let split = name
-        .char_indices()
-        .skip(1)
-        .find(|&(_, c)| c == '.')
-        .map_or(name.len(), |(i, _)| i);
-    let (stem, extensions) = name.split_at(split);
+    let (stem, extension) = split_extension(&name);
     (2u32..)
-        .map(|n| dest.with_file_name(format!("{stem} ({n}){extensions}")))
+        .map(|n| dest.with_file_name(format!("{stem} ({n}){extension}")))
         .find(|candidate| is_free(candidate))
         .unwrap_or_else(|| dest.to_path_buf())
+}
+
+/// Splitst een bestandsnaam in stam en extensie (met de punt). De extensie begint bij de laatste
+/// punt, behalve een punt vooraan (`.env` heeft er geen) en een "extensie" met een spatie
+/// (`Notities. Concept` heeft er geen). Staat er vlak voor die punt `.tar`, dan hoort dat erbij:
+/// `x.tar.gz`, `x.tar.xz`.
+fn split_extension(name: &str) -> (&str, &str) {
+    let Some(dot) = name.rfind('.').filter(|&i| i >= 1) else {
+        return (name, "");
+    };
+    if name[dot..].contains(' ') {
+        return (name, "");
+    }
+    let before = &name[..dot];
+    let split = match before.len().checked_sub(4) {
+        Some(tar)
+            if tar >= 1
+                && before
+                    .get(tar..)
+                    .is_some_and(|t| t.eq_ignore_ascii_case(".tar")) =>
+        {
+            tar
+        }
+        _ => dot,
+    };
+    name.split_at(split)
 }
 
 /// Vrij is enkel wat zeker niet bestaat. Een dode symlink of een onleesbare plek telt als bezet.
@@ -104,14 +125,52 @@ mod tests {
         );
     }
 
-    #[test]
-    fn unique_dest_does_not_panic_on_leading_dot() {
+    fn counted(existing: &str) -> PathBuf {
         let dir = tempdir().unwrap();
-        fs::write(dir.path().join(".env"), b"1").unwrap();
+        fs::write(dir.path().join(existing), b"1").unwrap();
+        let unique = unique_dest(&dir.path().join(existing));
+        unique.strip_prefix(dir.path()).unwrap().to_path_buf()
+    }
+
+    #[test]
+    fn unique_dest_counts_before_the_last_dot() {
         assert_eq!(
-            unique_dest(&dir.path().join(".env")),
-            dir.path().join(".env (2)")
+            counted("versie 1.2 final.pdf"),
+            Path::new("versie 1.2 final (2).pdf")
         );
+        assert_eq!(
+            counted("IMG 2026.10.31.jpg"),
+            Path::new("IMG 2026.10.31 (2).jpg")
+        );
+        assert_eq!(counted("foto.jpg"), Path::new("foto (2).jpg"));
+    }
+
+    #[test]
+    fn unique_dest_keeps_tar_in_the_extension() {
+        assert_eq!(counted("x.tar.gz"), Path::new("x (2).tar.gz"));
+        assert_eq!(counted("x.tar.bz2"), Path::new("x (2).tar.bz2"));
+        assert_eq!(counted("x.tar.xz"), Path::new("x (2).tar.xz"));
+        assert_eq!(counted("x.tar.zst"), Path::new("x (2).tar.zst"));
+        assert_eq!(
+            counted("Back-up 1.2.TAR.GZ"),
+            Path::new("Back-up 1.2 (2).TAR.GZ")
+        );
+        assert_eq!(counted("x.tar"), Path::new("x (2).tar"));
+    }
+
+    #[test]
+    fn unique_dest_treats_extension_with_space_as_no_extension() {
+        assert_eq!(
+            counted("Notities. Concept"),
+            Path::new("Notities. Concept (2)")
+        );
+    }
+
+    #[test]
+    fn unique_dest_leading_dot_is_not_an_extension() {
+        assert_eq!(counted(".env"), Path::new(".env (2)"));
+        assert_eq!(counted(".env.local"), Path::new(".env (2).local"));
+        assert_eq!(counted(".tar.gz"), Path::new(".tar (2).gz"));
     }
 
     #[test]
