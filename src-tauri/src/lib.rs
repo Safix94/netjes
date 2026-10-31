@@ -1,4 +1,5 @@
 pub mod categories;
+pub mod dupes;
 pub mod paths;
 pub mod scan;
 
