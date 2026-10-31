@@ -4,6 +4,7 @@ pub mod mover;
 pub mod paths;
 pub mod planner;
 pub mod scan;
+pub mod undo;
 
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
 #[tauri::command]

@@ -117,6 +117,20 @@ fn rename_no_replace(src: &Path, dest: &Path) -> io::Result<()> {
     fs::rename(src, dest)
 }
 
+/// Verplaatst `src` naar `dest`, of naar de eerstvolgende vrije naam als `dest` al bezet is, en
+/// geeft het uiteindelijke pad terug. Nooit vervangen: zie `rename_no_replace`.
+pub fn move_path_no_replace(src: &Path, dest: &Path) -> io::Result<PathBuf> {
+    for _ in 0..MAX_ATTEMPTS {
+        let candidate = unique_dest(dest);
+        match rename_no_replace(src, &candidate) {
+            Ok(()) => return Ok(candidate),
+            Err(e) if e.kind() == ErrorKind::AlreadyExists => continue,
+            Err(e) => return Err(e),
+        }
+    }
+    Err(io::Error::new(ErrorKind::AlreadyExists, NO_FREE_NAME))
+}
+
 fn try_move(m: &PlannedMove) -> Result<PathBuf, String> {
     let src = Path::new(&m.src);
     let dest = Path::new(&m.dest);
@@ -134,15 +148,7 @@ fn try_move(m: &PlannedMove) -> Result<PathBuf, String> {
         return Err(OUTSIDE.to_string());
     }
 
-    for _ in 0..MAX_ATTEMPTS {
-        let candidate = unique_dest(dest);
-        match rename_no_replace(src, &candidate) {
-            Ok(()) => return Ok(candidate),
-            Err(e) if e.kind() == ErrorKind::AlreadyExists => continue,
-            Err(e) => return Err(e.to_string()),
-        }
-    }
-    Err(NO_FREE_NAME.to_string())
+    move_path_no_replace(src, dest).map_err(|e| e.to_string())
 }
 
 #[cfg(test)]
@@ -365,5 +371,36 @@ mod tests {
         assert_eq!((outcomes[0].id, outcomes[0].ok), (1, false));
         assert_eq!((outcomes[1].id, outcomes[1].ok), (2, true));
         assert!(root.path().join("Foto's").join("a.jpg").exists());
+    }
+
+    #[test]
+    fn move_path_no_replace_uses_free_name_and_never_overwrites() {
+        let dir = tempdir().unwrap();
+        let src = dir.path().join("nieuw.txt");
+        let target = dir.path().join("doel.txt");
+        fs::write(&src, b"nieuw").unwrap();
+
+        let first = move_path_no_replace(&src, &target).unwrap();
+        assert_eq!(first, target);
+        assert_eq!(fs::read(&target).unwrap(), b"nieuw");
+        assert!(!src.exists());
+
+        fs::write(&src, b"tweede").unwrap();
+        let second = move_path_no_replace(&src, &target).unwrap();
+        assert_eq!(second, dir.path().join("doel (2).txt"));
+        assert_eq!(fs::read(&target).unwrap(), b"nieuw");
+        assert_eq!(fs::read(&second).unwrap(), b"tweede");
+        assert!(!src.exists());
+    }
+
+    #[test]
+    fn move_path_no_replace_reports_missing_source() {
+        let dir = tempdir().unwrap();
+        let target = dir.path().join("doel.txt");
+
+        let err = move_path_no_replace(&dir.path().join("weg.txt"), &target).unwrap_err();
+
+        assert_eq!(err.kind(), ErrorKind::NotFound);
+        assert!(!target.exists());
     }
 }
