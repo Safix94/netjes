@@ -100,7 +100,10 @@ export const getCategories = (): Promise<CategoryInfo[]> => invoke<CategoryInfo[
 /** Weigert schijfwortels, systeemmappen en de gebruikersmap zelf, en bewaart de scan voor `beginOrganize`. */
 export const scan = (root: string): Promise<ScanResult> => invoke<ScanResult>("scan", { root });
 
-/** Plant en maakt de categoriemappen aan. `root` moet de `root` van de laatste scan zijn. */
+/**
+ * Plant en maakt de categoriemappen aan. `root` moet de `root` van de laatste scan zijn. Een
+ * tweede start op dezelfde scan wordt geweigerd ("Scan de map opnieuw."): scan eerst opnieuw.
+ */
 export const beginOrganize = (root: string): Promise<OrganizePlan> =>
   invoke<OrganizePlan>("begin_organize", { root });
 

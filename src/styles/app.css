@@ -1,0 +1,503 @@
+/* Lay-out en componenten van Netjes, overgenomen uit mockup v3 (opruimer-v3.html). Kleuren en
+   lettertypen komen enkel uit tokens.css. */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  overflow-x: hidden;
+  overflow-y: auto;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 1.4;
+  -webkit-font-smoothing: antialiased;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+}
+
+h1,
+h2 {
+  margin: 0;
+}
+
+/* Het raster: kop en status bovenaan, tellers / hoop / knoppen in het midden, de mappen eronder.
+   De middenrij is minstens zo hoog als de hoop met zijn onderschrift (--stage plus 28 px). Is het
+   venster lager dan het raster nodig heeft, dan groeit .mo mee en scrolt de pagina verticaal. */
+.mo {
+  --stage: 340px;
+  display: grid;
+  grid-template-rows: auto minmax(calc(var(--stage) + 28px), 1fr) auto;
+  grid-template-columns: 300px minmax(0, 1fr) 300px;
+  grid-template-areas:
+    "head head status"
+    "stats pile ctrl"
+    "cards cards cards";
+  gap: 10px 24px;
+  min-height: 100%;
+  padding: 26px 34px 22px;
+}
+
+.mono {
+  font-family: var(--font-mono);
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  font-size: 11px;
+  color: var(--muted);
+  font-weight: 500;
+}
+
+.dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--lime);
+  margin-right: 8px;
+  vertical-align: middle;
+  position: relative;
+  top: -1px;
+}
+
+/* Kop */
+.mo-head {
+  grid-area: head;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  position: relative;
+  padding-right: 130px;
+}
+
+.mo-head h1 {
+  font-size: 38px;
+  font-weight: 600;
+  letter-spacing: -0.03em;
+  line-height: 1.1;
+}
+
+.mo-head h1 em {
+  font-style: normal;
+  background: var(--lime);
+  padding: 0 0.12em;
+  border-radius: 8px;
+}
+
+.mo-head .mo-btn {
+  position: absolute;
+  top: 0;
+  right: 0;
+}
+
+/* Status */
+.mo-status {
+  grid-area: status;
+  justify-self: end;
+  align-self: start;
+  padding-top: 2px;
+  max-width: 100%;
+}
+
+.mo-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 16px;
+  border-radius: 999px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  font-size: 13px;
+  font-weight: 500;
+  white-space: nowrap;
+  min-height: 40px;
+}
+
+.mo-pill .pdot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--border);
+  flex-shrink: 0;
+}
+
+.mo-pill.sorting .pdot {
+  background: var(--lime);
+  animation: pulse 0.8s ease-in-out infinite alternate;
+}
+
+.mo-pill.done {
+  border-color: var(--ink);
+}
+
+.mo-pill.done .pdot {
+  background: var(--lime);
+}
+
+/* Een foutmelding kan langer zijn dan de kolom en mag dus over twee regels. */
+.mo-pill.error {
+  border-color: var(--ink);
+  white-space: normal;
+  border-radius: 20px;
+  line-height: 1.35;
+}
+
+.mo-pill.error .pdot {
+  background: var(--ink);
+}
+
+@keyframes pulse {
+  from {
+    transform: scale(0.7);
+    opacity: 0.6;
+  }
+  to {
+    transform: scale(1.25);
+    opacity: 1;
+  }
+}
+
+/* Tellers. `contain: size` zodat de kolom de hoogte van de middenrij niet bepaalt; hij vult die. */
+.mo-stats {
+  grid-area: stats;
+  contain: size;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 18px;
+  padding-left: 2px;
+}
+
+.mo-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.stat-v {
+  font-size: 34px;
+  font-weight: 600;
+  letter-spacing: -0.03em;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.rn {
+  display: inline-flex;
+  height: 1em;
+  overflow: hidden;
+  vertical-align: bottom;
+}
+
+.rd {
+  display: inline-block;
+  width: 0.6em;
+  height: 1em;
+  overflow: hidden;
+}
+
+.rs {
+  display: block;
+  transition: transform 280ms cubic-bezier(0.65, 0, 0.35, 1);
+  will-change: transform;
+}
+
+.rs span {
+  display: block;
+  height: 1em;
+  line-height: 1em;
+  text-align: center;
+}
+
+/* De hoop */
+.mo-pile {
+  grid-area: pile;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  min-height: 0;
+}
+
+.stage {
+  width: var(--stage);
+  height: var(--stage);
+  position: relative;
+  flex-shrink: 0;
+}
+
+/* Knoppen */
+.mo-ctrl {
+  grid-area: ctrl;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: flex-end;
+  gap: 8px;
+  position: relative;
+  z-index: 40;
+  min-height: 0;
+  contain: size;
+}
+
+.mo-btn {
+  font: 500 14px/1 var(--font-sans);
+  background: var(--lime);
+  color: var(--ink);
+  border: 0;
+  border-radius: 999px;
+  padding: 0 22px;
+  height: 44px;
+  cursor: pointer;
+  width: 220px;
+  flex-shrink: 0;
+}
+
+.mo-btn:hover:not(:disabled) {
+  filter: brightness(0.96);
+}
+
+.mo-btn.sec {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  font-size: 13px;
+  height: 40px;
+}
+
+.mo-btn.small {
+  width: auto;
+  padding: 0 18px;
+}
+
+.mo-btn.on {
+  border-color: var(--ink);
+}
+
+.mo-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.mo-btn:focus-visible,
+.mo-card:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+}
+
+/* De padregel: de Windows-map krijgt de ruimte van de kolom en kapt links af. */
+.path {
+  display: block;
+  max-width: 100%;
+  margin-top: 6px;
+  padding-bottom: 0.2em;
+  margin-bottom: -0.2em;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  direction: rtl;
+  flex-shrink: 0;
+}
+
+/* Mappen */
+.cards {
+  grid-area: cards;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.crow {
+  display: flex;
+  gap: 24px;
+  align-items: flex-start;
+}
+
+.grp-title {
+  margin-bottom: 6px;
+}
+
+.grp-grid {
+  display: flex;
+  gap: 7px;
+}
+
+.mo-card {
+  width: 170px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 7px 9px 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  text-align: left;
+  transition: border-color 0.12s;
+  cursor: pointer;
+}
+
+.mo-card:hover {
+  border-color: color-mix(in srgb, var(--border) 55%, var(--muted));
+}
+
+.mo-card.hit {
+  border-color: var(--ink);
+}
+
+.mo-card.wide {
+  width: 347px;
+}
+
+.mo-card-top {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.cdot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--border);
+  flex-shrink: 0;
+  transition: background 0.2s;
+}
+
+.mo-card.active .cdot {
+  background: var(--lime);
+}
+
+/* De ruimte onder de basislijn houdt de staarten van g, p en y heel. */
+.cname {
+  flex: 1;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  padding-bottom: 0.2em;
+  margin-bottom: -0.2em;
+}
+
+.ccount {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.strip {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 3px;
+}
+
+.mo-card.wide .strip {
+  grid-template-columns: repeat(12, 1fr);
+}
+
+.slot {
+  aspect-ratio: 1;
+  border-radius: 3px;
+  background: var(--paper);
+  overflow: hidden;
+  border: 1px solid var(--surface);
+}
+
+.slot canvas {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+/* Bestanden die niet verplaatst konden worden */
+.errors {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  flex: 0 1 auto;
+  min-height: 0;
+  max-height: 96px;
+  margin-top: 6px;
+  font-size: 12px;
+  line-height: 1.4;
+  text-align: right;
+  color: var(--body);
+}
+
+/* De titel blijft staan, alleen de lijst scrolt. */
+.errors ul {
+  list-style: none;
+  flex: 1 1 auto;
+  min-height: 0;
+  margin: 4px 0 0;
+  padding: 0;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+
+.errors li {
+  overflow-wrap: anywhere;
+}
+
+.err-name {
+  font-weight: 600;
+  color: var(--ink);
+}
+
+/* Compacte indeling voor lage vensters (bv. 1366x768 of 1536x864 bij 125% schaal): kleinere hoop,
+   tellers en tussenruimtes zodat het raster in 780 px hoogte past zonder te scrollen. Lager dan
+   dat scrolt de pagina verticaal. De hoop blijft vierkant. */
+@media (max-height: 859px) {
+  .mo {
+    --stage: 280px;
+    gap: 8px 24px;
+    padding: 18px 34px 14px;
+  }
+
+  .mo-stats {
+    gap: 12px;
+  }
+
+  .stat-v {
+    font-size: 26px;
+  }
+
+  .mo-ctrl {
+    gap: 6px;
+  }
+
+  .cards {
+    gap: 6px;
+  }
+
+  .grp-title {
+    margin-bottom: 4px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rs,
+  .mo-card,
+  .cdot {
+    transition: none;
+  }
+
+  .mo-pill.sorting .pdot {
+    animation: none;
+  }
+}
