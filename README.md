@@ -10,7 +10,7 @@ Meer uitleg volgt op agentiek.be.
 
 ## Download
 
-Haal het installatiebestand op via https://github.com/Safix94/netjes/releases/latest. Het bestand heet `Netjes_1.0.0_x64-setup.exe` en werkt op Windows 10 en 11 (64 bit). Versie 1.0 heeft geen updater en geen telemetrie.
+Haal het installatiebestand op via https://github.com/Safix94/netjes/releases/latest. Het bestand heet `Netjes_1.0.0_x64-setup.exe` en werkt op Windows 10 en 11 (64 bit). Versie 1.0 installeert geen updates zelf: de knop "Controleren op updates" in de kop vergelijkt met de nieuwste release en linkt naar de downloadpagina. Geen telemetrie.
 
 ## Windows-waarschuwing
 
@@ -49,6 +49,10 @@ Tests:
 pnpm test
 cargo test --manifest-path src-tauri/Cargo.toml
 ```
+
+Oefenen zonder je echte Downloads-map: `.\scripts\maak-testmap.ps1` maakt `Netjes-testmap` op je bureaublad met 1.000 bestanden (600 PNG's, 100 MP4's, 300 documenten, 8 duplicaten). Kies die map in Netjes met "Map kiezen". Opnieuw vullen kan met `-Force`.
+
+De animatie zonder Tauri bekijken: `pnpm dev` en dan http://localhost:1420/harness.html?n=1000 (nepbestanden, met fps-teller en pauzeknop).
 
 ## Licentie
 
