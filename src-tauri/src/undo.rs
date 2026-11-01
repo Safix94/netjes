@@ -64,7 +64,8 @@ pub struct UndoResult {
     pub errors: Vec<MoveOutcome>,
 }
 
-fn default_log_dir() -> PathBuf {
+/// `app_data_dir()/undo`: de map met alle logs.
+pub fn default_log_dir() -> PathBuf {
     app_data_dir().join("undo")
 }
 
