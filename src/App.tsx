@@ -202,6 +202,11 @@ export default function App() {
     }
   }, []);
 
+  // Alleen in dev: een map scannen zonder de mapkiezer, voor de geautomatiseerde test.
+  useEffect(() => {
+    if (import.meta.env.DEV) window.__NETJES_DEV = { openFolder: runScan };
+  }, [runScan]);
+
   useEffect(() => {
     void (async () => {
       try {
