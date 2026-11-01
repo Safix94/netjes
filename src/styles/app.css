@@ -14,6 +14,8 @@ body,
 }
 
 body {
+  overflow-x: hidden;
+  overflow-y: auto;
   background: var(--paper);
   color: var(--ink);
   font-family: var(--font-sans);
@@ -33,19 +35,19 @@ h2 {
 }
 
 /* Het raster: kop en status bovenaan, tellers / hoop / knoppen in het midden, de mappen eronder.
-   De hoop van 340 px past pas vanaf 840 px hoogte naast de mappen; de minimale venstergrootte in
-   tauri.conf.json (minHeight 860) houdt het venster daarboven. */
+   De middenrij is minstens zo hoog als de hoop met zijn onderschrift (--stage plus 28 px). Is het
+   venster lager dan het raster nodig heeft, dan groeit .mo mee en scrolt de pagina verticaal. */
 .mo {
+  --stage: 340px;
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr) auto;
+  grid-template-rows: auto minmax(calc(var(--stage) + 28px), 1fr) auto;
   grid-template-columns: 300px minmax(0, 1fr) 300px;
   grid-template-areas:
     "head head status"
     "stats pile ctrl"
     "cards cards cards";
   gap: 10px 24px;
-  height: 100%;
-  min-height: 840px;
+  min-height: 100%;
   padding: 26px 34px 22px;
 }
 
@@ -167,9 +169,10 @@ h2 {
   }
 }
 
-/* Tellers */
+/* Tellers. `contain: size` zodat de kolom de hoogte van de middenrij niet bepaalt; hij vult die. */
 .mo-stats {
   grid-area: stats;
+  contain: size;
   display: flex;
   flex-direction: column;
   justify-content: center;
@@ -230,8 +233,8 @@ h2 {
 }
 
 .stage {
-  width: 340px;
-  height: 340px;
+  width: var(--stage);
+  height: var(--stage);
   position: relative;
   flex-shrink: 0;
 }
@@ -246,6 +249,8 @@ h2 {
   gap: 8px;
   position: relative;
   z-index: 40;
+  min-height: 0;
+  contain: size;
 }
 
 .mo-btn {
@@ -258,6 +263,7 @@ h2 {
   height: 44px;
   cursor: pointer;
   width: 220px;
+  flex-shrink: 0;
 }
 
 .mo-btn:hover:not(:disabled) {
@@ -302,6 +308,7 @@ h2 {
   white-space: nowrap;
   text-overflow: ellipsis;
   direction: rtl;
+  flex-shrink: 0;
 }
 
 /* Mappen */
@@ -421,6 +428,8 @@ h2 {
   display: flex;
   flex-direction: column;
   width: 100%;
+  flex: 0 1 auto;
+  min-height: 0;
   max-height: 96px;
   margin-top: 6px;
   font-size: 12px;
@@ -448,6 +457,37 @@ h2 {
 .err-name {
   font-weight: 600;
   color: var(--ink);
+}
+
+/* Compacte indeling voor lage vensters (bv. 1366x768 of 1536x864 bij 125% schaal): kleinere hoop,
+   tellers en tussenruimtes zodat het raster in 780 px hoogte past zonder te scrollen. Lager dan
+   dat scrolt de pagina verticaal. De hoop blijft vierkant. */
+@media (max-height: 859px) {
+  .mo {
+    --stage: 280px;
+    gap: 8px 24px;
+    padding: 18px 34px 14px;
+  }
+
+  .mo-stats {
+    gap: 12px;
+  }
+
+  .stat-v {
+    font-size: 26px;
+  }
+
+  .mo-ctrl {
+    gap: 6px;
+  }
+
+  .cards {
+    gap: 6px;
+  }
+
+  .grp-title {
+    margin-bottom: 4px;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
