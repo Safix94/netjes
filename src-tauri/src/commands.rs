@@ -25,6 +25,7 @@ const FORBIDDEN_ROOT: &str = "Die map ruimt Netjes niet op. Kies een gewone map 
 const NOT_A_FOLDER: &str = "Dit is geen map.";
 const NOT_SCANNED: &str = "Deze map is nog niet gescand.";
 const NO_PLAN: &str = "Eerst opruimen starten.";
+const RESCAN_FIRST: &str = "Scan de map opnieuw.";
 const UNKNOWN_FILE: &str = "Onbekend bestand.";
 const NO_DOWNLOADS: &str = "Downloads-map niet gevonden";
 const MAX_THUMB_PX: u32 = 1024;
@@ -181,8 +182,21 @@ fn begin_organize_impl(state: &AppState, root: &str) -> Result<OrganizePlan, Str
         .as_ref()
         .filter(|scan| scan.root == root_string(&root))
         .ok_or(NOT_SCANNED)?;
+    // Een bestaand plan hoort bij een log dat al verplaatste bestanden kan bevatten. Een tweede
+    // start op dezelfde scan zou dat log vervangen en de undo van die bestanden kwijtraken; elke
+    // eerlijke herstart (nieuwe scan, ongedaan maken, rommelig maken) wist het plan eerst.
+    if lock(&state.plan).is_some() {
+        return Err(RESCAN_FIRST.to_string());
+    }
 
     let moves = planner::plan_moves(&root, &scanned.files);
+    if moves.is_empty() {
+        // Niets te doen mag een bestaand log nooit vervangen.
+        return Ok(OrganizePlan {
+            moves,
+            folders_created: Vec::new(),
+        });
+    }
     let used: Vec<Category> = categories::all()
         .iter()
         .copied()
@@ -515,6 +529,75 @@ mod tests {
         assert_eq!(
             move_files_impl(&fx.state, &root, &[id]).unwrap_err(),
             NO_PLAN
+        );
+    }
+
+    #[test]
+    fn begin_organize_twice_on_the_same_scan_keeps_the_undo_log() {
+        let fx = Fixture::new();
+        let (root, plan) = fx.scanned_and_planned();
+        let ids: Vec<u32> = plan.moves.iter().map(|m| m.id).collect();
+        move_files_impl(&fx.state, &root, &ids).unwrap();
+        assert_eq!(check_undo_impl(&fx.state, &root).unwrap().count, 3);
+
+        // Zonder nieuwe scan klopt het plan niet meer en mag het log niet vervangen worden.
+        assert_eq!(
+            begin_organize_impl(&fx.state, &root).unwrap_err(),
+            RESCAN_FIRST
+        );
+        assert_eq!(check_undo_impl(&fx.state, &root).unwrap().count, 3);
+
+        // Na een nieuwe scan is er niets meer los: een leeg plan, en het log blijft gewoon staan.
+        scan_impl(&fx.state, &root).unwrap();
+        let empty = begin_organize_impl(&fx.state, &root).unwrap();
+        assert!(empty.moves.is_empty());
+        assert!(empty.folders_created.is_empty());
+        assert_eq!(check_undo_impl(&fx.state, &root).unwrap().count, 3);
+        assert_eq!(undo_organize_impl(&fx.state, &root).unwrap().restored, 3);
+    }
+
+    #[test]
+    fn begin_organize_refuses_a_second_start_before_anything_moved() {
+        let fx = Fixture::new();
+        let (root, plan) = fx.scanned_and_planned();
+        assert_eq!(
+            begin_organize_impl(&fx.state, &root).unwrap_err(),
+            RESCAN_FIRST
+        );
+        // Het eerste plan is nog bruikbaar.
+        let id = Fixture::id_of(&plan, "b.pdf");
+        assert!(move_files_impl(&fx.state, &root, &[id]).unwrap()[0].ok);
+        assert_eq!(check_undo_impl(&fx.state, &root).unwrap().count, 1);
+    }
+
+    #[test]
+    fn undo_log_is_found_through_any_spelling_of_the_root() {
+        let fx = Fixture::new();
+        let (root, plan) = fx.scanned_and_planned();
+        let ids: Vec<u32> = plan.moves.iter().map(|m| m.id).collect();
+        move_files_impl(&fx.state, &root, &ids).unwrap();
+
+        let trailing_backslash = format!("{root}\\");
+        let forward_slashes = format!("{}/", root.replace('\\', "/"));
+        for spelling in [&trailing_backslash, &forward_slashes] {
+            assert_eq!(
+                check_undo_impl(&fx.state, spelling).unwrap().count,
+                3,
+                "{spelling}"
+            );
+        }
+
+        let undone = undo_organize_impl(&fx.state, &forward_slashes).unwrap();
+        assert_eq!(undone.restored, 3);
+        assert!(undone.errors.is_empty());
+        assert!(fx.root().join("a.jpg").is_file());
+        assert!(fx.root().join("a (1).jpg").is_file());
+        assert!(fx.root().join("b.pdf").is_file());
+        assert_eq!(
+            check_undo_impl(&fx.state, &trailing_backslash)
+                .unwrap()
+                .count,
+            0
         );
     }
 
