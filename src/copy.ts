@@ -42,4 +42,9 @@ export const copy = {
     "Dit maakt de map opnieuw rommelig, enkel om het sorteren opnieuw te tonen. Doorgaan?",
   errorsTitle: (n: number) => `${files(n)} niet verplaatst`,
   forbiddenRoot: "Die map ruimt Netjes niet op. Kies een gewone map zoals Downloads.",
+  // De zinnen die de Rust-kant zelf als fout teruggeeft; src/lib/errors.ts toont enkel deze.
+  notAFolder: "Dit is geen map.",
+  noDownloads: "Downloads-map niet gevonden",
+  rescanFirst: "Scan de map opnieuw.",
+  genericError: "Er ging iets mis. Probeer het opnieuw.",
 };

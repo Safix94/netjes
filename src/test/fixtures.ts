@@ -31,14 +31,18 @@ export const CATEGORIES: CategoryInfo[] = [
 
 let nextId = 0;
 
-export const file = (category: Category): FileEntry => ({
-  id: nextId++,
-  name: `${category}-${nextId}`,
-  path: `C:\Downloads\${category}-${nextId}`,
-  size: 1,
-  modified_ms: 0,
-  category,
-  is_duplicate: category === "duplicaten",
-  duplicate_of: null,
-  placeholder: false,
-});
+export const file = (category: Category): FileEntry => {
+  const id = nextId++;
+  const name = `${category}-${id}`;
+  return {
+    id,
+    name,
+    path: `C:\\Downloads\\${name}`,
+    size: 1,
+    modified_ms: 0,
+    category,
+    is_duplicate: category === "duplicaten",
+    duplicate_of: null,
+    placeholder: false,
+  };
+};

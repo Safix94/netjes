@@ -14,8 +14,7 @@ export function ErrorList({ errors }: { errors: ErrorItem[] }) {
       <ul>
         {errors.map((item, i) => (
           <li key={`${item.name}-${i}`}>
-            <span className="err-name">{item.name}</span>
-            <span className="err-text">{item.error}</span>
+            <span className="err-name">{item.name}</span> <span>{item.error}</span>
           </li>
         ))}
       </ul>

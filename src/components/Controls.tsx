@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { copy } from "../copy";
 import type { Phase } from "./StatusPill";
 
@@ -12,6 +13,8 @@ export interface ControlsProps {
   onResort(): void;
   onChooseFolder(): void;
   rootPath: string;
+  /** Staat onder de padregel, bv. de lijst met bestanden die niet verplaatst konden worden. */
+  children?: ReactNode;
 }
 
 /** Fases waarin Opruimen niets te doen heeft of niet mag starten. */
@@ -30,6 +33,7 @@ export function Controls({
   onResort,
   onChooseFolder,
   rootPath,
+  children,
 }: ControlsProps) {
   const busy = BUSY.has(phase);
   return (
@@ -56,6 +60,7 @@ export function Controls({
       <span className="mono path" title={rootPath}>
         <bdi>{rootPath}</bdi>
       </span>
+      {children}
     </div>
   );
 }

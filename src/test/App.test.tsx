@@ -99,6 +99,27 @@ describe("App", () => {
     await waitFor(() => expect(api.scan).toHaveBeenCalledTimes(2));
   });
 
+  it("shows the generic Dutch message instead of an English plugin error", async () => {
+    vi.mocked(api.revealInExplorer).mockRejectedValue(new Error("failed to open path: access denied"));
+    render(<App />);
+    await screen.findByText(copy.statusReady(4));
+    fireEvent.click(document.querySelector('[data-cat="fotos"]')!);
+    expect(await screen.findByText(copy.genericError)).toBeInTheDocument();
+    expect(screen.queryByText(/access denied/)).not.toBeInTheDocument();
+  });
+
+  it("clears an error on the next action so the normal status returns", async () => {
+    render(<App />);
+    await screen.findByText(copy.statusReady(4));
+    vi.mocked(api.chooseFolder).mockResolvedValue("C:\\Windows");
+    vi.mocked(api.scan).mockRejectedValueOnce(copy.forbiddenRoot);
+    fireEvent.click(button(copy.chooseFolder));
+    expect(await screen.findByText(copy.forbiddenRoot)).toBeInTheDocument();
+    fireEvent.click(document.querySelector('[data-cat="audio"]')!);
+    expect(await screen.findByText(copy.statusReady(4))).toBeInTheDocument();
+    expect(screen.queryByText(copy.forbiddenRoot)).not.toBeInTheDocument();
+  });
+
   it("toggles recording mode with Ctrl+Shift+R and with the Opname button", async () => {
     render(<App />);
     await screen.findByText(copy.statusReady(4));

@@ -17,12 +17,13 @@ export interface FolderCardProps {
 
 export function FolderCard({ info, count, active, hit, wide, slotRefs, onOpen }: FolderCardProps) {
   // Vaste ref-functies per vakje: een nieuwe functie bij elke render zou slotRefs telkens eerst
-  // met null en dan opnieuw met hetzelfde canvas aanroepen.
+  // met null en dan opnieuw met hetzelfde canvas aanroepen. De accolades zijn bewust: een
+  // teruggegeven waarde leest React 19 als opruimfunctie van de ref.
   const refs = useMemo(
     () =>
-      Array.from({ length: SLOT_COUNT }, (_, i) => (el: HTMLCanvasElement | null) =>
-        slotRefs(info.id, i, el),
-      ),
+      Array.from({ length: SLOT_COUNT }, (_, i) => (el: HTMLCanvasElement | null) => {
+        slotRefs(info.id, i, el);
+      }),
     [info.id, slotRefs],
   );
   const className = ["mo-card", wide && "wide", active && "active", hit && "hit"]

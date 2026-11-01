@@ -19,6 +19,7 @@ import {
   type CategoryInfo,
   type FileEntry,
 } from "./lib/api";
+import { errorText } from "./lib/errors";
 
 /** Het resultaat van de laatste gelukte scan. */
 interface View {
@@ -31,12 +32,6 @@ const NONE: ReadonlySet<string> = new Set();
 /** Wordt gevuld door de opruimrun (branch feat/donut-canvas). */
 const NO_ERRORS: ErrorItem[] = [];
 const NO_FILES: FileEntry[] = [];
-
-/** De Rust-kant weigert met een korte Nederlandse tekst; die van een geweigerde map staat in copy. */
-function errorText(error: unknown): string {
-  const text = error instanceof Error ? error.message : String(error);
-  return text.includes("ruimt Netjes niet op") ? copy.forbiddenRoot : text;
-}
 
 function folderNameOf(path: string): string {
   const parts = path.split(/[\\/]/).filter((part) => part.length > 0);
@@ -163,6 +158,7 @@ export default function App() {
   const pillPhase: Phase = busy ?? (error ? "error" : phase);
 
   const handleChooseFolder = async () => {
+    setError(null);
     try {
       const picked = await chooseFolder(view?.root ?? "", copy.chooseFolder);
       if (picked) await runScan(picked);
@@ -174,13 +170,13 @@ export default function App() {
   const handleUndo = async () => {
     if (!view) return;
     const root = view.root;
+    setError(null);
     try {
       if (!(await confirm(copy.confirmUndo(undoCount), copy.appName))) return;
     } catch (e) {
       setError(errorText(e));
       return;
     }
-    setError(null);
     setBusy("undoing");
     let failure: string | null = null;
     try {
@@ -194,6 +190,7 @@ export default function App() {
 
   // Een map die nog niet bestaat openen zou in Windows een foutvenster geven, dus dan gebeurt er niets.
   const handleOpen = (cat: string) => {
+    setError(null);
     const info = categories.find((c) => c.id === cat);
     if (!view || !info || !view.existing.includes(info.id)) return;
     revealInExplorer(joinPath(view.root, info.folder)).catch((e) => setError(errorText(e)));
@@ -220,7 +217,6 @@ export default function App() {
             {caption}
           </div>
         )}
-        <ErrorList errors={NO_ERRORS} />
       </div>
       <Controls
         phase={phase}
@@ -235,7 +231,9 @@ export default function App() {
         onResort={() => {}}
         onChooseFolder={() => void handleChooseFolder()}
         rootPath={view?.root ?? ""}
-      />
+      >
+        <ErrorList errors={NO_ERRORS} />
+      </Controls>
       <FolderGroups
         categories={categories}
         counts={counts}
