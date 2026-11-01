@@ -3,7 +3,7 @@
 // belofte afwijzen met een korte Nederlandse tekst (een `string`).
 import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import { ask, open } from "@tauri-apps/plugin-dialog";
-import { openPath as openWithDefaultApp, revealItemInDir } from "@tauri-apps/plugin-opener";
+import { openPath as openWithDefaultApp, openUrl as openInBrowser, revealItemInDir } from "@tauri-apps/plugin-opener";
 
 export type Category =
   | "fotos"
@@ -90,6 +90,14 @@ export interface UndoResult {
   errors: MoveOutcome[];
 }
 
+export interface UpdateInfo {
+  state: "available" | "latest" | "error";
+  version: string | null;
+}
+
+/** De pagina met de nieuwste download; de versiecheck opent ze in de browser. */
+export const DOWNLOAD_PAGE = "https://www.agentiek.be/netjes";
+
 /** Het id van de extra uitkomst "het log kon niet bewaard worden"; geen bestand heeft dit id. */
 export const LOG_SAVE_FAILED_ID = 4294967295;
 
@@ -131,6 +139,11 @@ export const getThumbnails = (paths: string[], px: number): Promise<Array<string
 
 export const openPath = (path: string): Promise<void> => openWithDefaultApp(path);
 
+export const openUrl = (url: string): Promise<void> => openInBrowser(url);
+
+/** Vergelijkt met de nieuwste GitHub-release; zonder netwerk `error`, zonder release `latest`. */
+export const checkUpdate = (): Promise<UpdateInfo> => invoke<UpdateInfo>("check_update");
+
 export const revealInExplorer = (path: string): Promise<void> => revealItemInDir(path);
 
 /** Het gekozen pad, of `null` als de gebruiker annuleert. */
@@ -155,6 +168,8 @@ export const api = {
   listFolderFiles,
   getThumbnails,
   openPath,
+  openUrl,
+  checkUpdate,
   revealInExplorer,
   chooseFolder,
   confirm,

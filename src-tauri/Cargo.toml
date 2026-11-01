@@ -26,6 +26,7 @@ dirs = "6"
 blake3 = "1"
 image = { version = "0.25", default-features = false, features = ["png"] }
 tauri-plugin-dialog = "2"
+ureq = { version = "2", features = ["json"] }
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Storage_FileSystem"] }

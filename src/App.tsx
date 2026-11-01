@@ -4,13 +4,15 @@ import { ErrorList, type ErrorItem } from "./components/ErrorList";
 import { FlyCanvas, type AnimFile } from "./components/FlyCanvas";
 import { FolderGroups } from "./components/FolderGroups";
 import { FolderViewer } from "./components/FolderViewer";
-import { Header } from "./components/Header";
+import { Header, type UpdateState } from "./components/Header";
 import { Stats } from "./components/Stats";
 import { StatusPill, type Phase } from "./components/StatusPill";
 import { copy } from "./copy";
 import {
+  DOWNLOAD_PAGE,
   beginOrganize,
   checkUndo,
+  checkUpdate,
   chooseFolder,
   confirm,
   disorganize,
@@ -20,6 +22,7 @@ import {
   listFolderFiles,
   moveFiles,
   openPath,
+  openUrl,
   revealInExplorer,
   scan,
   thumbUrl,
@@ -126,6 +129,17 @@ export default function App() {
   const [busy, setBusy] = useState<"scanning" | "undoing" | null>("scanning");
   const [error, setError] = useState<string | null>(null);
   const [recording, setRecording] = useState(false);
+  const [update, setUpdate] = useState<{ state: UpdateState; version?: string }>({ state: "idle" });
+
+  const handleCheckUpdate = async () => {
+    setUpdate({ state: "checking" });
+    try {
+      const info = await checkUpdate();
+      setUpdate({ state: info.state, version: info.version ?? undefined });
+    } catch {
+      setUpdate({ state: "error" });
+    }
+  };
 
   // De canvaslaag leest hieruit het hoopvlak en de 12 vakjes per map.
   const stageRef = useRef<HTMLDivElement>(null);
@@ -457,7 +471,11 @@ export default function App() {
       <Header
         folderName={folderNameOf(view?.root ?? "")}
         recording={recording}
+        updateState={update.state}
+        updateVersion={update.version}
         onToggleRecording={() => setRecording((on) => !on)}
+        onCheckUpdate={() => void handleCheckUpdate()}
+        onOpenUpdate={() => openUrl(DOWNLOAD_PAGE).catch((e) => setError(errorText(e)))}
       />
       <StatusPill phase={pillPhase} text={statusText(pillPhase, files.length, error)} />
       <Stats {...stats} />

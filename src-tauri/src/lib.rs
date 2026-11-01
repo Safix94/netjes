@@ -8,6 +8,7 @@ pub mod scan;
 pub mod state;
 pub mod thumbs;
 pub mod undo;
+pub mod update;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -26,6 +27,7 @@ pub fn run() {
             commands::disorganize,
             commands::list_folder_files,
             commands::get_thumbnails,
+            commands::check_update,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -637,3 +637,12 @@ mod tests {
         );
     }
 }
+
+/// Versiecheck tegen de nieuwste GitHub-release; enkel een melding, geen installatie.
+#[tauri::command]
+pub async fn check_update() -> crate::update::UpdateInfo {
+    let current = env!("CARGO_PKG_VERSION");
+    tauri::async_runtime::spawn_blocking(move || crate::update::check(current))
+        .await
+        .unwrap_or(crate::update::UpdateInfo { state: crate::update::UpdateState::Error, version: None })
+}

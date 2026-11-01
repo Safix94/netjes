@@ -23,6 +23,9 @@ vi.mock("../lib/api", () => ({
   confirm: vi.fn(),
   revealInExplorer: vi.fn(),
   openPath: vi.fn(),
+  openUrl: vi.fn(),
+  checkUpdate: vi.fn(),
+  DOWNLOAD_PAGE: "https://www.agentiek.be/netjes",
   thumbUrl: (p: string) => p,
 }));
 
@@ -236,6 +239,25 @@ describe("App", () => {
     expect(await screen.findByText(copy.statusDone)).toBeInTheDocument();
     expect(screen.getByRole("img", { name: "4" })).toBeInTheDocument();
     expect(screen.getByText(copy.logNotSaved)).toBeInTheDocument();
+  });
+
+  it("checks for updates on request and offers the download page when a newer version exists", async () => {
+    vi.mocked(api.checkUpdate).mockResolvedValue({ state: "available", version: "1.1.0" });
+    vi.mocked(api.openUrl).mockResolvedValue();
+    render(<App />);
+    await screen.findByText(copy.statusReady(4));
+    fireEvent.click(button(copy.checkUpdate));
+    expect(await screen.findByText(copy.updateAvailable("1.1.0"))).toBeInTheDocument();
+    fireEvent.click(button(copy.updateOpen));
+    expect(api.openUrl).toHaveBeenCalledWith("https://www.agentiek.be/netjes");
+
+    vi.mocked(api.checkUpdate).mockResolvedValue({ state: "error", version: null });
+    fireEvent.click(button(copy.updateOpen));
+    cleanup();
+    render(<App />);
+    await screen.findByText(copy.statusReady(4));
+    fireEvent.click(button(copy.checkUpdate));
+    expect(await screen.findByText(copy.updateError)).toBeInTheDocument();
   });
 
   it("in recording mode, Rommelig maken asks first and Opnieuw sorteren runs straight through", async () => {
