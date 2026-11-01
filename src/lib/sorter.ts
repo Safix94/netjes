@@ -1,3 +1,5 @@
+import type { Api, MoveOutcome } from "./api";
+
 export interface SortItem {
   id: number;
   category: string;
@@ -66,4 +68,104 @@ export function landingFor(outcome: Outcome | undefined, p: number): "fly" | "ho
   if (p < 1) return "fly";
   if (!outcome) return "hold";
   return outcome.ok ? "land" : "return";
+}
+
+export interface RunOrganizeDeps {
+  root: string;
+  files: SortItem[];
+  api: Pick<Api, "beginOrganize" | "moveFiles">;
+  /** Dezelfde klok als het canvas: `() => performance.now()`. */
+  now: () => number;
+  onSchedule(launchAt: Map<number, number>, animated: Set<number>): void;
+  onOutcome(o: Outcome): void;
+  /** Bestanden per aanvraag aan de Rust-kant (40). */
+  batchSize?: number;
+  /** Afstand tussen twee lanceringen in ms (12). */
+  stagger?: number;
+  /** Extra vertraging per tegel, normaal `flight.jitter` van het bestand. */
+  jitter?: (id: number) => number;
+  /** Wachten; injecteerbaar voor tests. */
+  sleep?: (ms: number) => Promise<void>;
+  /** Hoeveel ms voor het vertrek van de eerste tegel een batch aangevraagd wordt (400). */
+  lead?: number;
+  /** Hoeveel ms na nu de eerste tegel vertrekt (250). */
+  startDelay?: number;
+}
+
+export interface RunOrganizeResult {
+  moved: number;
+  failed: Outcome[];
+}
+
+const defaultSleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+
+function toOutcome(o: MoveOutcome): Outcome {
+  return { id: o.id, ok: o.ok, dest: o.dest ?? undefined, error: o.error ?? undefined };
+}
+
+function errorText(err: unknown): string {
+  if (err instanceof Error) return err.message;
+  return typeof err === "string" ? err : "verplaatsen mislukt";
+}
+
+/**
+ * Stuurt het opruimen aan: beginOrganize, dan het lanceerschema voor de geanimeerde tegels
+ * (hoogstens 600, buitenste ring eerst), dan de verplaatsingen in batches in lanceervolgorde.
+ * Batch k wordt aangevraagd zodra de eerste tegel ervan over `lead` ms vertrekt; de batches
+ * zonder animatie volgen meteen daarna. Elke uitkomst gaat direct naar `onOutcome`, ook die
+ * van bestanden die stil mee verhuizen. Een geweigerde batch wordt per bestand een mislukking.
+ */
+export async function runOrganize(deps: RunOrganizeDeps): Promise<RunOrganizeResult> {
+  const {
+    root,
+    files,
+    api,
+    now,
+    onSchedule,
+    onOutcome,
+    batchSize = 40,
+    stagger = 12,
+    jitter = () => 0,
+    sleep = defaultSleep,
+    lead = 400,
+    startDelay = 250,
+  } = deps;
+
+  const plan = await api.beginOrganize(root);
+  const planned = new Set(plan.moves.map((m) => m.id));
+  const order = launchOrder(files).filter((id) => planned.has(id));
+  const animated = pickAnimated(files);
+  for (const id of animated) if (!planned.has(id)) animated.delete(id);
+  const animatedOrder = order.filter((id) => animated.has(id));
+  const silentOrder = order.filter((id) => !animated.has(id));
+
+  const launchAt = schedule(animatedOrder, now() + startDelay, stagger, jitter);
+  onSchedule(launchAt, animated);
+
+  const result: RunOrganizeResult = { moved: 0, failed: [] };
+  const take = (o: Outcome) => {
+    if (o.ok) result.moved++;
+    else result.failed.push(o);
+    onOutcome(o);
+  };
+
+  const pending: Promise<void>[] = [];
+  for (const batch of batches([...animatedOrder, ...silentOrder], batchSize)) {
+    const at = launchAt.get(batch[0]);
+    if (at !== undefined) {
+      const wait = at - lead - now();
+      if (wait > 0) await sleep(wait);
+    }
+    pending.push(
+      api.moveFiles(root, batch).then(
+        (outs) => outs.forEach((o) => take(toOutcome(o))),
+        (err: unknown) => {
+          const error = errorText(err);
+          batch.forEach((id) => take({ id, ok: false, error }));
+        },
+      ),
+    );
+  }
+  await Promise.all(pending);
+  return result;
 }
