@@ -1,3 +1,4 @@
+import { copy } from "../copy";
 import { LOG_SAVE_FAILED_ID, type Api, type MoveOutcome } from "./api";
 
 export interface SortItem {
@@ -104,7 +105,7 @@ export interface RunOrganizeResult {
   logError?: string;
 }
 
-const NO_OUTCOME = "geen uitkomst ontvangen";
+const NO_OUTCOME = copy.noOutcome;
 
 const defaultSleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
@@ -114,7 +115,7 @@ function toOutcome(o: MoveOutcome): Outcome {
 
 function errorText(err: unknown): string {
   if (err instanceof Error) return err.message;
-  return typeof err === "string" ? err : "verplaatsen mislukt";
+  return typeof err === "string" ? err : copy.moveFailed;
 }
 
 /**

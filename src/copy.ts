@@ -41,6 +41,15 @@ export const copy = {
   confirmDisorganize:
     "Dit maakt de map opnieuw rommelig, enkel om het sorteren opnieuw te tonen. Doorgaan?",
   errorsTitle: (n: number) => `${files(n)} niet verplaatst`,
+  moveFailed: "Verplaatsen mislukt.",
+  noOutcome: "Geen antwoord gekregen voor dit bestand.",
+  logNotSaved: "Het log voor Ongedaan maken kon niet bewaard worden. Deze opruimbeurt kan je niet terugzetten.",
+  checkUpdate: "Controleren op updates",
+  updateChecking: "Even kijken…",
+  updateAvailable: (v: string) => `Nieuwe versie ${v} beschikbaar`,
+  updateLatest: "Je hebt de nieuwste versie",
+  updateError: "Kon niet controleren",
+  updateOpen: "Download de nieuwe versie",
   forbiddenRoot: "Die map ruimt Netjes niet op. Kies een gewone map zoals Downloads.",
   // De zinnen die de Rust-kant zelf als fout teruggeeft; src/lib/errors.ts toont enkel deze.
   notAFolder: "Dit is geen map.",

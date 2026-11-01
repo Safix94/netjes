@@ -1,0 +1,42 @@
+<!doctype html>
+<!-- Bron van het app-icoon: limoen vlak met een ink "N" in Inter Tight 700. Screenshot van #icon op
+     1024 bij 1024 geeft design/icon.png; daarna `pnpm tauri icon design/icon.png`. -->
+<html lang="nl">
+  <head>
+    <meta charset="UTF-8" />
+    <style>
+      @font-face {
+        font-family: "Inter Tight";
+        font-weight: 700;
+        src: url("../node_modules/@fontsource/inter-tight/files/inter-tight-latin-700-normal.woff2") format("woff2");
+      }
+      html,
+      body {
+        margin: 0;
+        background: #ffffff;
+      }
+      #icon {
+        width: 1024px;
+        height: 1024px;
+        background: #cdf464;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-family: "Inter Tight", Arial, sans-serif;
+        font-weight: 700;
+        font-size: 720px;
+        line-height: 1;
+        letter-spacing: -0.04em;
+        color: #12150f;
+      }
+      #icon span {
+        position: relative;
+        top: -28px;
+        left: -12px;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="icon"><span>N</span></div>
+  </body>
+</html>
