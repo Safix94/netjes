@@ -1,0 +1,15 @@
+/* Agentiek-huisstijl (projects/agentiek/huisstijl.md). De canvaslaag leest deze namen met
+   getComputedStyle, hernoem ze dus niet zonder de canvaslaag mee te nemen. */
+:root {
+  --ink: #12150f;
+  --body: #3f4640;
+  --muted: #6b736a;
+  --paper: #f4f6ee;
+  --surface: #ffffff;
+  --border: #e3e7db;
+  --lime: #cdf464;
+  --lime-soft: #e6fab4;
+
+  --font-sans: "Inter Tight", Inter, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: "JetBrains Mono", "IBM Plex Mono", Consolas, monospace;
+}
