@@ -16,6 +16,8 @@ const params = new URLSearchParams(location.search);
 const N = Math.max(0, Math.min(5000, Number(params.get("n")) || 431));
 const FAILS = Math.max(0, Number(params.get("fail") ?? 4));
 const SEED = Number(params.get("seed")) || 5273572;
+/** `?snap=2000`: start meteen en bevries de animatie 2000 ms na de klik, voor een screenshot. */
+const SNAP = Math.max(0, Number(params.get("snap")) || 0);
 const ROOT = "C:\\Users\\Karsten\\Downloads";
 const RADIUS = 160;
 const SLOTS = 12;
@@ -129,6 +131,26 @@ function Harness() {
   const slots = useRef(new Map<string, HTMLDivElement>());
   const hitTimers = useRef(new Map<string, number>());
   const settled = useRef(0);
+  // Pauze: elke frame wordt nowOffset zo gezet dat performance.now() + nowOffset op het bevroren tijdstip blijft.
+  const [offset, setOffset] = useState(0);
+  const [paused, setPaused] = useState(false);
+  const frozenAt = useRef(0);
+  const offsetRef = useRef(0);
+  offsetRef.current = offset;
+  const pause = useCallback(() => {
+    frozenAt.current = performance.now() + offsetRef.current;
+    setPaused(true);
+  }, []);
+  useEffect(() => {
+    if (!paused) return;
+    let raf = 0;
+    const tick = () => {
+      raf = requestAnimationFrame(tick);
+      setOffset(frozenAt.current - performance.now());
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [paused]);
   const animatedIds = useMemo(() => new Set(model.anim.map((f) => f.id)), [model]);
   const byId = useMemo(() => new Map(model.fakes.map((f) => [f.id, f])), [model]);
 
@@ -152,6 +174,19 @@ function Harness() {
   const getSlotRect = useCallback((cat: string, i: number) => {
     const el = slots.current.get(`${cat}:${i}`);
     return el ? el.getBoundingClientRect() : null;
+  }, []);
+  // Eén stabiele ref-callback per vakje, anders koppelt React bij elke render 192 refs los en weer vast.
+  const slotRefs = useRef(new Map<string, (el: HTMLDivElement | null) => void>());
+  const slotRef = useCallback((key: string) => {
+    let cb = slotRefs.current.get(key);
+    if (!cb) {
+      cb = (el) => {
+        if (el) slots.current.set(key, el);
+        else slots.current.delete(key);
+      };
+      slotRefs.current.set(key, cb);
+    }
+    return cb;
   }, []);
 
   const flash = useCallback((cat: string) => {
@@ -202,6 +237,8 @@ function Harness() {
     setCounts({});
     setErrors([]);
     setSilentOk(0);
+    setPaused(false);
+    setOffset(0);
     setPhase("ready");
   }, []);
 
@@ -225,6 +262,7 @@ function Harness() {
       onSchedule: (launchAt) => {
         setFiles((prev) => prev.map((f) => ({ ...f, launchAt: launchAt.get(f.id) })));
         setPhase("sorting");
+        if (SNAP) window.setTimeout(pause, SNAP);
       },
       onOutcome: (o) => {
         outcomes.current.set(o.id, o);
@@ -237,10 +275,19 @@ function Harness() {
         }
       },
     });
-  }, [phase, reset, animatedIds, byId]);
+  }, [phase, reset, animatedIds, byId, pause]);
 
   const buildModelRef = useRef(model);
   buildModelRef.current = model;
+  const organizeRef = useRef(organize);
+  organizeRef.current = organize;
+
+  // ?snap=: zelf starten zodra de eerste miniaturen binnen zijn.
+  useEffect(() => {
+    if (!SNAP) return;
+    const t = window.setTimeout(() => organizeRef.current(), 900);
+    return () => clearTimeout(t);
+  }, []);
 
   const total = Object.values(counts).reduce((a, b) => a + b, 0);
   const photos = (counts.fotos ?? 0) + (counts.screenshots ?? 0) + (counts.gifs ?? 0);
@@ -299,6 +346,11 @@ function Harness() {
           <button className="btn sec" onClick={reset} disabled={phase === "sorting"}>
             Opnieuw
           </button>
+          {phase === "sorting" && (
+            <button className="btn sec" onClick={paused ? () => setPaused(false) : pause}>
+              {paused ? "Verder" : "Pauze"}
+            </button>
+          )}
           <span className="mono path">{ROOT}</span>
           <Fps />
         </div>
@@ -323,14 +375,7 @@ function Harness() {
                           </div>
                           <div className="strip">
                             {Array.from({ length: SLOTS }, (_, i) => (
-                              <div
-                                className="slot"
-                                key={i}
-                                ref={(el) => {
-                                  if (el) slots.current.set(`${c.id}:${i}`, el);
-                                  else slots.current.delete(`${c.id}:${i}`);
-                                }}
-                              />
+                              <div className="slot" key={i} ref={slotRef(`${c.id}:${i}`)} />
                             ))}
                           </div>
                         </div>
@@ -347,6 +392,7 @@ function Harness() {
           phase={phase}
           stageRef={stageRef}
           getSlotRect={getSlotRect}
+          nowOffset={offset}
           onLand={onLand}
           onReturn={onReturn}
           outcomes={outcomes.current}
