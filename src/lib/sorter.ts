@@ -1,4 +1,4 @@
-import type { Api, MoveOutcome } from "./api";
+import { LOG_SAVE_FAILED_ID, type Api, type MoveOutcome } from "./api";
 
 export interface SortItem {
   id: number;
@@ -74,7 +74,12 @@ export interface RunOrganizeDeps {
   root: string;
   files: SortItem[];
   api: Pick<Api, "beginOrganize" | "moveFiles">;
-  /** Dezelfde klok als het canvas: `() => performance.now()`. */
+  /**
+   * De ids die echt vliegen. Geef dezelfde set als waarmee de AnimFiles gebouwd zijn
+   * (`pickAnimated` op dezelfde lijst); ontbreekt ze, dan wordt ze hier berekend.
+   */
+  animated?: Set<number>;
+  /** De klok waarop het schema staat: `() => performance.now()`, zonder `nowOffset`. */
   now: () => number;
   onSchedule(launchAt: Map<number, number>, animated: Set<number>): void;
   onOutcome(o: Outcome): void;
@@ -95,7 +100,11 @@ export interface RunOrganizeDeps {
 export interface RunOrganizeResult {
   moved: number;
   failed: Outcome[];
+  /** Gezet als de Rust-kant meldt dat het ongedaan-maken-log niet bewaard kon worden; geen bestand. */
+  logError?: string;
 }
+
+const NO_OUTCOME = "geen uitkomst ontvangen";
 
 const defaultSleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
@@ -134,8 +143,10 @@ export async function runOrganize(deps: RunOrganizeDeps): Promise<RunOrganizeRes
   const plan = await api.beginOrganize(root);
   const planned = new Set(plan.moves.map((m) => m.id));
   const order = launchOrder(files).filter((id) => planned.has(id));
-  const animated = pickAnimated(files);
-  for (const id of animated) if (!planned.has(id)) animated.delete(id);
+  let animated = deps.animated ?? pickAnimated(files);
+  if ([...animated].some((id) => !planned.has(id))) {
+    animated = new Set([...animated].filter((id) => planned.has(id)));
+  }
   const animatedOrder = order.filter((id) => animated.has(id));
   const silentOrder = order.filter((id) => !animated.has(id));
 
@@ -158,7 +169,18 @@ export async function runOrganize(deps: RunOrganizeDeps): Promise<RunOrganizeRes
     }
     pending.push(
       api.moveFiles(root, batch).then(
-        (outs) => outs.forEach((o) => take(toOutcome(o))),
+        (outs) => {
+          const seen = new Set<number>();
+          for (const o of outs) {
+            if (o.id === LOG_SAVE_FAILED_ID) {
+              result.logError = o.error ?? "het log kon niet bewaard worden";
+              continue;
+            }
+            seen.add(o.id);
+            take(toOutcome(o));
+          }
+          for (const id of batch) if (!seen.has(id)) take({ id, ok: false, error: NO_OUTCOME });
+        },
         (err: unknown) => {
           const error = errorText(err);
           batch.forEach((id) => take({ id, ok: false, error }));

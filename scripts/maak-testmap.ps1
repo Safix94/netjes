@@ -29,9 +29,16 @@ param(
 $ErrorActionPreference = "Stop"
 Add-Type -AssemblyName System.Drawing
 
+# Het script maakt enkel een map leeg die het zelf gemaakt heeft: die herken je aan het merkteken.
+$Merkteken = ".netjes-testmap"
+
 if (Test-Path -LiteralPath $Pad) {
   $bestaand = @(Get-ChildItem -LiteralPath $Pad -Force)
   if ($bestaand.Count -gt 0) {
+    if (-not (Test-Path -LiteralPath (Join-Path $Pad $Merkteken))) {
+      Write-Error "De map '$Pad' is niet door dit script gemaakt (geen $Merkteken) en wordt niet leeggemaakt. Kies een andere map."
+      exit 1
+    }
     if (-not $Force) {
       Write-Error "De map '$Pad' bestaat al en is niet leeg. Geef -Force mee om ze eerst leeg te maken."
       exit 1
@@ -42,6 +49,8 @@ if (Test-Path -LiteralPath $Pad) {
 } else {
   New-Item -ItemType Directory -Path $Pad | Out-Null
 }
+$merk = New-Item -ItemType File -Path (Join-Path $Pad $Merkteken) -Force
+$merk.Attributes = $merk.Attributes -bor [System.IO.FileAttributes]::Hidden
 
 $rnd = [System.Random]::new(7)
 $gemaakt = 0

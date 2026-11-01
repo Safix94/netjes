@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import type { MoveOutcome, OrganizePlan } from "../lib/api";
+import { LOG_SAVE_FAILED_ID, type MoveOutcome, type OrganizePlan } from "../lib/api";
 import { launchOrder, runOrganize, type Outcome, type SortItem } from "../lib/sorter";
 
 function items(n: number): SortItem[] {
@@ -142,5 +142,78 @@ describe("runOrganize", () => {
     });
     expect(api.moveFiles.mock.calls.flatMap((c) => c[1]).sort()).toEqual([0, 1, 2]);
     expect(result.moved).toBe(3);
+  });
+
+  it("fills in a failure for ids missing from a batch response", async () => {
+    const files = items(5);
+    const api = fakeApi([0, 1, 2, 3, 4]);
+    api.moveFiles.mockImplementationOnce(async (_root, batch) =>
+      batch.filter((id) => id !== 3).map((id) => ({ id, ok: true, dest: `C:\d\m\${id}`, error: null })),
+    );
+    const outcomes: Outcome[] = [];
+    const result = await runOrganize({
+      root: "C:\d",
+      files,
+      api,
+      now: () => 0,
+      stagger: 0,
+      sleep: async () => undefined,
+      onSchedule: () => undefined,
+      onOutcome: (o) => outcomes.push(o),
+    });
+    expect(outcomes).toHaveLength(5);
+    expect(outcomes.find((o) => o.id === 3)).toMatchObject({ id: 3, ok: false });
+    expect(outcomes.find((o) => o.id === 3)!.error).toBeTruthy();
+    expect(result.failed.map((f) => f.id)).toEqual([3]);
+    expect(result.moved).toBe(4);
+  });
+
+  it("reports a failed undo log separately instead of as a file", async () => {
+    const files = items(2);
+    const api = fakeApi([0, 1]);
+    api.moveFiles.mockImplementationOnce(async (_root, batch) => [
+      { id: LOG_SAVE_FAILED_ID, ok: false, dest: null, error: "log niet bewaard" },
+      ...batch.map((id) => ({ id, ok: true, dest: `C:\d\m\${id}`, error: null })),
+    ]);
+    const outcomes: Outcome[] = [];
+    const result = await runOrganize({
+      root: "C:\d",
+      files,
+      api,
+      now: () => 0,
+      stagger: 0,
+      sleep: async () => undefined,
+      onSchedule: () => undefined,
+      onOutcome: (o) => outcomes.push(o),
+    });
+    expect(outcomes.map((o) => o.id).sort()).toEqual([0, 1]);
+    expect(result.failed).toEqual([]);
+    expect(result.moved).toBe(2);
+    expect(result.logError).toBe("log niet bewaard");
+  });
+
+  it("uses the animated set the caller already chose", async () => {
+    const files = items(700);
+    const api = fakeApi(files.map((f) => f.id));
+    const chosen = new Set(files.slice(0, 100).map((f) => f.id));
+    let launchAt: Map<number, number> | null = null;
+    let animated: Set<number> | null = null;
+    const result = await runOrganize({
+      root: "C:\d",
+      files,
+      api,
+      animated: chosen,
+      now: () => 0,
+      stagger: 0,
+      sleep: async () => undefined,
+      onSchedule: (m, set) => {
+        launchAt = m;
+        animated = set;
+      },
+      onOutcome: () => undefined,
+    });
+    expect(animated).toBe(chosen);
+    expect([...launchAt!.keys()].sort((a, b) => a - b)).toEqual([...chosen].sort((a, b) => a - b));
+    expect(result.moved).toBe(700);
   });
 });

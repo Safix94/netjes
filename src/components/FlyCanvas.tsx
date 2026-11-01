@@ -23,6 +23,12 @@ export interface AnimFile {
 }
 
 export interface FlyCanvasProps {
+  /**
+   * Enkel de tegels die echt vliegen: de ids uit `pickAnimated` op de scanlijst, met een
+   * `pile` uit `layoutPile(files.length, ...)`. Geef dezelfde set als `animated` aan
+   * `runOrganize`, anders krijgen getekende tegels geen `launchAt`. Meer dan 600 wordt hier
+   * alsnog afgekapt, maar dan klopt de hoop niet meer met het schema.
+   */
   files: AnimFile[];
   phase: Phase;
   /** Het vierkant waarin de donut ligt; het middelpunt ervan is het middelpunt van de hoop. */

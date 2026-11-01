@@ -257,6 +257,7 @@ function Harness() {
       root: ROOT,
       files: current.items,
       api,
+      animated: animatedIds,
       now: () => performance.now(),
       jitter: (id) => jitterOf.get(id) ?? 0,
       onSchedule: (launchAt) => {
