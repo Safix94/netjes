@@ -89,7 +89,7 @@ function fakeApi(failing: Set<number>, allIds: number[]) {
   };
 }
 
-function Fps() {
+function Fps({ paused }: { paused: boolean }) {
   const [text, setText] = useState("fps …");
   const [slow, setSlow] = useState(false);
   useEffect(() => {
@@ -115,6 +115,7 @@ function Fps() {
     raf = requestAnimationFrame(loop);
     return () => cancelAnimationFrame(raf);
   }, []);
+  if (paused) return <div className="mono fps">Pauze · de tijd staat stil</div>;
   return <div className={`mono fps${slow ? " slow" : ""}`}>{text}</div>;
 }
 
@@ -353,7 +354,7 @@ function Harness() {
             </button>
           )}
           <span className="mono path">{ROOT}</span>
-          <Fps />
+          <Fps paused={paused} />
         </div>
         <div className="cards">
           {ROWS.map((row, r) => (
