@@ -10,7 +10,7 @@ Meer uitleg volgt op agentiek.be.
 
 ## Download
 
-Haal het installatiebestand op via https://github.com/Safix94/netjes/releases/latest. Het bestand heet `Netjes_1.0.0_x64-setup.exe` en werkt op Windows 10 en 11 (64 bit). Versie 1.0 installeert geen updates zelf: de knop "Controleren op updates" in de kop vergelijkt met de nieuwste release en linkt naar de downloadpagina. Geen telemetrie.
+Download rechtstreeks: https://github.com/Safix94/netjes/releases/latest/download/Netjes-Setup.exe. Die link geeft altijd de nieuwste versie. Het bestand heet `Netjes-Setup.exe` en werkt op Windows 10 en 11 (64 bit). Versie 1.0 installeert geen updates zelf: de knop "Controleren op updates" in de kop vergelijkt met de nieuwste release en linkt naar de downloadpagina. Geen telemetrie.
 
 ## Windows-waarschuwing
 
