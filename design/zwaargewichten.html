@@ -1,0 +1,1115 @@
+<!doctype html>
+<!-- Klikbare mockup van "Zwaargewichten": welke bestanden in de gekozen map (en haar submappen) wegen
+     het zwaarst, en welke daarvan vallen op omdat je ze waarschijnlijk niet meer nodig hebt. Alle
+     bestanden en groottes zijn verzonnen. Niets in deze pagina raakt echte bestanden. -->
+<html lang="nl">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Netjes · Zwaargewichten (mockup)</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700&family=JetBrains+Mono:wght@500&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      :root {
+        --ink: #12150f;
+        --body: #3f4640;
+        --muted: #6b736a;
+        --paper: #f4f6ee;
+        --surface: #ffffff;
+        --border: #e3e7db;
+        --lime: #cdf464;
+        --lime-soft: #e6fab4;
+        --font-sans: "Inter Tight", Inter, "Helvetica Neue", Arial, sans-serif;
+        --font-mono: "JetBrains Mono", "IBM Plex Mono", Consolas, monospace;
+      }
+      *,
+      *::before,
+      *::after {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        margin: 0;
+      }
+      body {
+        background: #e9ecdf;
+        color: var(--ink);
+        font-family: var(--font-sans);
+        font-size: 14px;
+        line-height: 1.4;
+        -webkit-font-smoothing: antialiased;
+        overflow-x: hidden;
+      }
+      button {
+        font: inherit;
+        color: inherit;
+      }
+      h1,
+      h2 {
+        margin: 0;
+      }
+
+      .win {
+        max-width: 1280px;
+        margin: 24px auto;
+        background: var(--paper);
+        border-radius: 28px;
+        padding: 26px 34px 30px;
+        display: grid;
+        grid-template-columns: 240px minmax(0, 1fr) 300px;
+        grid-template-areas:
+          "head head head"
+          "stats stage side"
+          "list list list";
+        gap: 18px 28px;
+        box-shadow: 0 30px 80px -40px rgba(18, 21, 15, 0.35);
+      }
+
+      .mono {
+        font-family: var(--font-mono);
+        text-transform: uppercase;
+        letter-spacing: 0.12em;
+        font-size: 11px;
+        color: var(--muted);
+        font-weight: 500;
+      }
+      .dot {
+        display: inline-block;
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background: var(--lime);
+        margin-right: 8px;
+        vertical-align: middle;
+        position: relative;
+        top: -1px;
+      }
+
+      /* Kop */
+      .head {
+        grid-area: head;
+        display: flex;
+        flex-wrap: wrap;
+        align-items: flex-end;
+        justify-content: space-between;
+        gap: 16px 24px;
+      }
+      .head h1 {
+        font-size: 38px;
+        font-weight: 600;
+        letter-spacing: -0.03em;
+        line-height: 1.15;
+        margin-top: 8px;
+      }
+      .head h1 em {
+        font-style: normal;
+        background: var(--lime);
+        padding: 0 0.12em 0.04em;
+        border-radius: 8px;
+      }
+      .tabs {
+        display: inline-flex;
+        padding: 4px;
+        border-radius: 999px;
+        background: var(--surface);
+        border: 1px solid var(--border);
+      }
+      .tabs button {
+        border: 0;
+        background: none;
+        min-height: 44px;
+        padding: 0 18px;
+        border-radius: 999px;
+        font-weight: 500;
+        cursor: pointer;
+        color: var(--body);
+      }
+      .tabs button[aria-selected="true"] {
+        background: var(--ink);
+        color: var(--paper);
+      }
+
+      /* Tellers */
+      .stats {
+        grid-area: stats;
+        display: flex;
+        flex-direction: column;
+        gap: 18px;
+      }
+      .stat .num {
+        font-size: 34px;
+        font-weight: 600;
+        letter-spacing: -0.03em;
+        line-height: 1.15;
+        margin-top: 4px;
+        font-variant-numeric: tabular-nums;
+      }
+      .stat.win-back .num {
+        display: inline-block;
+        background: var(--lime);
+        border-radius: 10px;
+        padding: 0 0.18em 0.04em;
+        font-size: 44px;
+      }
+      .stat .sub {
+        font-size: 12px;
+        color: var(--muted);
+        margin-top: 4px;
+      }
+
+      /* Podium */
+      .stage {
+        grid-area: stage;
+        position: relative;
+        min-width: 0;
+      }
+      .stage canvas {
+        display: block;
+        width: 100%;
+        touch-action: manipulation;
+      }
+      .caption {
+        text-align: center;
+        margin-top: 8px;
+      }
+      .tip {
+        position: absolute;
+        pointer-events: none;
+        background: var(--ink);
+        color: var(--paper);
+        border-radius: 10px;
+        padding: 8px 12px;
+        font-size: 12px;
+        max-width: 260px;
+        opacity: 0;
+        transform: translate(-50%, calc(-100% - 14px));
+        transition: opacity 0.12s;
+        overflow-wrap: anywhere;
+      }
+      .tip b {
+        display: block;
+        font-weight: 600;
+      }
+      .tip.on {
+        opacity: 1;
+      }
+
+      /* Zijkant */
+      .side {
+        grid-area: side;
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        min-width: 0;
+      }
+      .btn {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+        width: 100%;
+        min-height: 48px;
+        padding: 0 20px;
+        border-radius: 999px;
+        border: 1px solid var(--border);
+        background: var(--surface);
+        font-weight: 500;
+        font-size: 15px;
+        cursor: pointer;
+        transition:
+          transform 0.12s,
+          background 0.15s;
+      }
+      .btn:active {
+        transform: scale(0.98);
+      }
+      .btn.primary {
+        background: var(--lime);
+        border-color: var(--lime);
+        min-height: 56px;
+        font-size: 16px;
+      }
+      .btn.dark {
+        background: var(--ink);
+        border-color: var(--ink);
+        color: var(--paper);
+      }
+      .seg {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 6px;
+      }
+      .seg .btn {
+        min-height: 44px;
+        font-size: 13px;
+      }
+      .seg .btn[aria-pressed="true"] {
+        background: var(--ink);
+        border-color: var(--ink);
+        color: var(--paper);
+      }
+      .seg[hidden] {
+        display: none;
+      }
+      .card {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 20px;
+        padding: 18px;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        min-height: 230px;
+      }
+      .card .empty {
+        color: var(--muted);
+        margin: auto 0;
+        text-align: center;
+        padding: 0 10px;
+      }
+      .card .name {
+        font-weight: 600;
+        font-size: 16px;
+        line-height: 1.3;
+        overflow-wrap: anywhere;
+      }
+      .card .size {
+        font-size: 40px;
+        font-weight: 600;
+        letter-spacing: -0.03em;
+        line-height: 1.15;
+      }
+      .reason {
+        display: flex;
+        gap: 8px;
+        align-items: baseline;
+        background: var(--lime-soft);
+        border-radius: 12px;
+        padding: 8px 12px;
+        font-size: 13px;
+      }
+      .reason.calm {
+        background: var(--paper);
+        color: var(--body);
+      }
+      .reason .dot {
+        flex: none;
+        top: 0;
+        margin-right: 0;
+      }
+      .reason.calm .dot {
+        background: var(--border);
+      }
+      .meta {
+        font-size: 12px;
+        color: var(--muted);
+        overflow-wrap: anywhere;
+      }
+      .actions {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 8px;
+        margin-top: 4px;
+      }
+      .actions .btn {
+        min-height: 44px;
+        font-size: 13px;
+        padding: 0 8px;
+        white-space: nowrap;
+      }
+      .note {
+        font-size: 12px;
+        color: var(--muted);
+      }
+
+      /* Lijst */
+      .list {
+        grid-area: list;
+        min-width: 0;
+      }
+      .list h2 {
+        margin-bottom: 10px;
+      }
+      .rows {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 8px 16px;
+      }
+      .row {
+        display: grid;
+        grid-template-columns: 26px minmax(0, 1fr) auto;
+        align-items: center;
+        gap: 4px 12px;
+        min-height: 56px;
+        padding: 8px 14px;
+        border-radius: 14px;
+        background: var(--surface);
+        border: 1px solid var(--border);
+        text-align: left;
+        cursor: pointer;
+        width: 100%;
+      }
+      .row.sel {
+        border-color: var(--ink);
+      }
+      .row .rank {
+        font-family: var(--font-mono);
+        font-size: 11px;
+        color: var(--muted);
+      }
+      .row .n {
+        font-weight: 500;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        padding-bottom: 0.15em;
+        margin-bottom: -0.15em;
+      }
+      .row .s {
+        font-family: var(--font-mono);
+        font-size: 12px;
+        white-space: nowrap;
+      }
+      .row .bar {
+        grid-column: 2 / 4;
+        height: 4px;
+        border-radius: 4px;
+        background: var(--paper);
+        overflow: hidden;
+      }
+      .row .bar i {
+        display: block;
+        height: 100%;
+        border-radius: 4px;
+        background: var(--border);
+      }
+      .row.hot .bar i {
+        background: var(--lime);
+      }
+      .placeholder {
+        color: var(--muted);
+        padding: 14px 0;
+      }
+
+      .toast {
+        position: fixed;
+        left: 50%;
+        bottom: 24px;
+        transform: translate(-50%, 140%);
+        background: var(--ink);
+        color: var(--paper);
+        border-radius: 999px;
+        padding: 8px 8px 8px 20px;
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        max-width: calc(100vw - 24px);
+        opacity: 0;
+        visibility: hidden;
+        transition:
+          transform 0.25s cubic-bezier(0.2, 0.8, 0.2, 1),
+          opacity 0.2s,
+          visibility 0s 0.25s;
+        z-index: 10;
+      }
+      .toast.on {
+        transform: translate(-50%, 0);
+        opacity: 1;
+        visibility: visible;
+        transition:
+          transform 0.25s cubic-bezier(0.2, 0.8, 0.2, 1),
+          opacity 0.2s;
+      }
+      .toast span {
+        overflow-wrap: anywhere;
+      }
+      .toast button {
+        flex: none;
+        border: 0;
+        min-height: 44px;
+        padding: 0 16px;
+        border-radius: 999px;
+        background: var(--lime);
+        color: var(--ink);
+        font-weight: 500;
+        cursor: pointer;
+      }
+
+      @media (max-width: 1080px) {
+        .win {
+          grid-template-columns: minmax(0, 1fr);
+          grid-template-areas:
+            "head"
+            "stats"
+            "stage"
+            "side"
+            "list";
+          margin: 12px;
+          padding: 22px 20px 26px;
+        }
+        .stats {
+          display: grid;
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+          gap: 14px 20px;
+        }
+        .stat.win-back .num {
+          font-size: 34px;
+        }
+        .rows {
+          grid-template-columns: minmax(0, 1fr);
+        }
+      }
+      @media (max-width: 560px) {
+        .win {
+          margin: 0;
+          border-radius: 0;
+          padding: 18px 14px 24px;
+        }
+        .head h1 {
+          font-size: 28px;
+        }
+        .tabs {
+          width: 100%;
+        }
+        .tabs button {
+          flex: 1;
+          padding: 0 10px;
+        }
+        .stat .num,
+        .stat.win-back .num {
+          font-size: 26px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="win">
+      <header class="head">
+        <div>
+          <div class="mono"><span class="dot"></span>Netjes · mockup</div>
+          <h1>Wat weegt er zo zwaar in <em>Downloads</em>?</h1>
+        </div>
+        <div class="tabs" role="tablist" aria-label="Weergave">
+          <button type="button" role="tab" id="tabSort" aria-selected="true">Opruimen</button>
+          <button type="button" role="tab" id="tabHeavy" aria-selected="false">Zwaargewichten</button>
+        </div>
+      </header>
+
+      <section class="stats" aria-label="Tellers">
+        <div class="stat">
+          <div class="mono">Bestanden</div>
+          <div class="num" id="statFiles">0</div>
+        </div>
+        <div class="stat">
+          <div class="mono">Samen</div>
+          <div class="num" id="statTotal">0 GB</div>
+        </div>
+        <div class="stat">
+          <div class="mono">Opvallers</div>
+          <div class="num" id="statHot">?</div>
+        </div>
+        <div class="stat win-back">
+          <div class="mono">Terug te winnen</div>
+          <div class="num" id="statBack">?</div>
+          <div class="sub" id="statFreed">nog niet gewogen</div>
+        </div>
+      </section>
+
+      <section class="stage" id="stage">
+        <canvas id="cv" aria-label="Elk bestand als een bol, hoe groter hoe zwaarder"></canvas>
+        <div class="tip" id="tip"></div>
+        <div class="mono caption" id="caption"><span class="dot"></span>Je Downloads, zoals Netjes ze nu toont</div>
+      </section>
+
+      <aside class="side">
+        <button type="button" class="btn primary" id="weigh">Wat weegt hier zo zwaar?</button>
+        <div class="seg" id="filter" hidden>
+          <button type="button" class="btn" id="fAll" aria-pressed="true">Alles</button>
+          <button type="button" class="btn" id="fHot" aria-pressed="false">Enkel opvallers</button>
+        </div>
+        <div class="card" id="card" aria-live="polite">
+          <p class="empty">Netjes weegt elk bestand in deze map en in de submappen, en zoekt wat je waarschijnlijk niet meer nodig hebt.</p>
+        </div>
+        <p class="note">Mockup met verzonnen bestanden. Naar prullenbak doet hier niets met echte bestanden.</p>
+      </aside>
+
+      <section class="list" aria-label="De tien zwaarste">
+        <h2 class="mono"><span class="dot"></span>De tien zwaarste</h2>
+        <div class="rows" id="rows"><p class="placeholder">Nog niet gewogen.</p></div>
+      </section>
+    </main>
+
+    <div class="toast" id="toast" role="status">
+      <span id="toastText"></span>
+      <button type="button" id="toastUndo">Ongedaan maken</button>
+    </div>
+
+    <script>
+      "use strict";
+
+      // ---------- Verzonnen inhoud van Downloads ----------
+      function mulberry32(a) {
+        return function () {
+          a |= 0;
+          a = (a + 0x6d2b79f5) | 0;
+          let t = Math.imul(a ^ (a >>> 15), 1 | a);
+          t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+          return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+        };
+      }
+      const rng = mulberry32(20261101);
+      const pick = (list) => list[Math.floor(rng() * list.length)];
+      const pad = (n) => String(n).padStart(2, "0");
+
+      const KIND = {
+        foto: "Foto",
+        screenshot: "Screenshot",
+        doc: "Document",
+        video: "Video",
+        audio: "Audio",
+        zip: "Archief",
+        installer: "Installer",
+        iso: "Schijfkopie",
+      };
+
+      // [naam, soort, bytes, reden (leeg = valt niet op), laatst geopend, submap]
+      const GB = 1e9;
+      const NOTABLE = [
+        ["Win11_24H2_Dutch_x64.iso", "iso", 5.8 * GB, "Schijfkopie van Windows, al 2 jaar niet geopend", "2 jaar geleden", ""],
+        ["Trouwfilm-ruwe-export.mov", "video", 4.1 * GB, "Ruwe export, al 14 maanden niet geopend", "14 maanden geleden", "Video's"],
+        ["DaVinci_Resolve_19_Windows.zip", "zip", 3.1 * GB, "Installer in een zip, DaVinci Resolve staat al op je pc", "8 maanden geleden", ""],
+        ["Ubuntu-24.04-desktop-amd64.iso", "iso", 2.7 * GB, "Schijfkopie, al 11 maanden niet geopend", "11 maanden geleden", ""],
+        ["Fotos-Italie-2024.zip", "zip", 2.6 * GB, "Al uitgepakt naar de map Fotos-Italie-2024", "1 jaar geleden", ""],
+        ["Fotos-Italie-2024 (1).zip", "zip", 2.6 * GB, "Dubbel, precies hetzelfde als Fotos-Italie-2024.zip", "1 jaar geleden", ""],
+        ["Adobe-Premiere-Setup.exe", "installer", 1.9 * GB, "Installer, Premiere Pro staat al op je pc", "5 maanden geleden", ""],
+        ["Drone-ruw-0412.mp4", "video", 1.7 * GB, "Video, al 13 maanden niet geopend", "13 maanden geleden", "Video's"],
+        ["Schermopname 2025-03-14 101522.mp4", "video", 1.4 * GB, "Schermopname, al 8 maanden niet geopend", "8 maanden geleden", "Schermopnames"],
+        ["Podcast-aflevering-12-master.wav", "audio", 1.2 * GB, "Audio, al 9 maanden niet geopend", "9 maanden geleden", ""],
+        ["Lightroom-catalogus-backup.zip", "zip", 1.1 * GB, "", "vorige week", ""],
+        ["Projectbestanden-Agentiek.zip", "zip", 2.2 * GB, "", "vorige week", ""],
+        ["Vlog-montage-oktober.mp4", "video", 1.6 * GB, "", "gisteren", "Video's"],
+        ["Sollicitatie-portfolio-reel.mp4", "video", 1.3 * GB, "", "3 dagen geleden", "Video's"],
+        ["Klantvideo-final-final.mp4", "video", 0.92 * GB, "Dubbel, precies hetzelfde als Klantvideo-final.mp4", "3 maanden geleden", "Video's"],
+        ["Klantvideo-final.mp4", "video", 0.92 * GB, "", "3 maanden geleden", "Video's"],
+        ["Offerte-video-Bakkerij-Peeters.mp4", "video", 0.74 * GB, "", "gisteren", "Video's"],
+        ["Blender-4.2-windows-x64.msi", "installer", 0.38 * GB, "Installer, Blender staat al op je pc", "6 maanden geleden", "Installers"],
+        ["OBS-Studio-30.2-Windows-Installer.exe", "installer", 0.15 * GB, "Installer, OBS Studio staat al op je pc", "7 maanden geleden", "Installers"],
+        ["ZoomInstallerFull.exe", "installer", 0.09 * GB, "Installer, Zoom staat al op je pc", "1 jaar geleden", "Installers"],
+      ];
+      const OPENED = ["vandaag", "gisteren", "vorige week", "2 weken geleden", "vorige maand", "3 maanden geleden"];
+      const DOCS = ["Factuur", "Offerte", "Contract", "Notities", "Planning", "Brochure", "Handleiding", "Briefing"];
+      const FILL = [
+        { kind: "foto", n: 120, min: 1.2e6, max: 9e6, dir: "Foto's", name: (i) => `IMG_${2400 + i * 3}.jpg` },
+        {
+          kind: "screenshot",
+          n: 46,
+          min: 1.5e5,
+          max: 2.5e6,
+          dir: "Screenshots",
+          name: () =>
+            `Schermafbeelding 2026-${pad(1 + Math.floor(rng() * 10))}-${pad(1 + Math.floor(rng() * 28))} ${pad(Math.floor(rng() * 24))}${pad(Math.floor(rng() * 60))}.png`,
+        },
+        { kind: "doc", n: 62, min: 4e4, max: 4e6, dir: "", name: (i) => `${pick(DOCS)}-${2026 - (i % 3)}-${pad(1 + (i % 12))}.pdf` },
+        { kind: "video", n: 11, min: 2e7, max: 3.5e8, dir: "Video's", name: (i) => `Clip-${pad(i + 1)}.mp4` },
+        { kind: "audio", n: 9, min: 3e6, max: 1.2e7, dir: "", name: (i) => `Spraakmemo ${i + 1}.m4a` },
+        { kind: "zip", n: 6, min: 5e6, max: 1.5e8, dir: "", name: (i) => `Bestanden-van-klant-${i + 1}.zip` },
+      ];
+      const PHOTO = ["#7fb069", "#e0a458", "#6c9bd2", "#d96c75", "#9b8bd6", "#4fb3a9", "#c9a227", "#e58f65"];
+
+      const files = [];
+      for (const [name, kind, bytes, reason, opened, dir] of NOTABLE) {
+        files.push({ name, kind, bytes, reason, opened, dir });
+      }
+      for (const f of FILL) {
+        for (let i = 0; i < f.n; i++) {
+          files.push({
+            name: f.name(i),
+            kind: f.kind,
+            bytes: f.min * Math.pow(f.max / f.min, rng()),
+            reason: "",
+            opened: pick(OPENED),
+            dir: f.dir,
+          });
+        }
+      }
+      files.forEach((f, i) => {
+        f.id = i;
+        f.hot = f.reason !== "";
+        f.color = f.kind === "foto" ? PHOTO[i % PHOTO.length] : null;
+        f.phase = rng() * Math.PI * 2;
+        f.state = "here"; // here | leaving | gone
+      });
+
+      // ---------- Opmaak van getallen ----------
+      const nl = (v, d) => v.toFixed(d).replace(".", ",");
+      function fmt(b) {
+        if (b >= 1e9) return `${nl(b / 1e9, 1)} GB`;
+        if (b >= 1e8) return `${Math.round(b / 1e6)} MB`;
+        if (b >= 1e6) return `${nl(b / 1e6, 1)} MB`;
+        return `${Math.max(1, Math.round(b / 1e3))} KB`;
+      }
+
+      // ---------- Toestand ----------
+      const cv = document.getElementById("cv");
+      const ctx = cv.getContext("2d");
+      const stage = document.getElementById("stage");
+      const tip = document.getElementById("tip");
+      let W = 0,
+        H = 0,
+        dpr = 1,
+        scale = 1;
+      let mode = "donut"; // donut | heavy
+      let morph = 0; // 0 = tegeltjes in de donut, 1 = bollen
+      let onlyHot = false;
+      let weighed = false;
+      let selected = null;
+      let hover = null;
+      let freed = 0;
+      let lastTrashed = null;
+      const shown = { back: 0, hot: 0 };
+
+      const TILE = 6; // halve breedte van een tegeltje in de donut
+      const alive = () => files.filter((f) => f.state === "here");
+      const target = (f) => (mode === "heavy" ? f.r : TILE);
+
+      function layout() {
+        const w = stage.clientWidth;
+        const h = Math.round(Math.max(320, Math.min(540, w * 0.82)));
+        const oldW = W || w,
+          oldH = H || h;
+        W = w;
+        H = h;
+        dpr = Math.min(2, window.devicePixelRatio || 1);
+        cv.width = Math.round(W * dpr);
+        cv.height = Math.round(H * dpr);
+        cv.style.height = `${H}px`;
+
+        // Bolgrootte: oppervlakte evenredig met het gewicht, samen ongeveer 42 procent van het podium.
+        const sum = files.reduce((s, f) => s + f.bytes, 0);
+        const max = Math.max(...files.map((f) => f.bytes));
+        scale = Math.sqrt((0.42 * W * H) / (Math.PI * sum));
+        scale = Math.min(scale, (0.25 * Math.min(W, H)) / Math.sqrt(max));
+        const ring = Math.min(W, H) * 0.34;
+        const golden = Math.PI * (3 - Math.sqrt(5));
+        files.forEach((f, i) => {
+          f.r = Math.max(2.5, scale * Math.sqrt(f.bytes));
+          const a = i * golden;
+          const rr = ring + (((i * 37) % 53) / 53 - 0.5) * 56;
+          f.hx = W / 2 + Math.cos(a) * rr;
+          f.hy = H / 2 + Math.sin(a) * rr;
+          if (f.x === undefined) {
+            f.x = f.hx;
+            f.y = f.hy;
+            f.vx = f.vy = 0;
+            f.rn = TILE;
+            f.alpha = 1;
+          } else {
+            f.x *= W / oldW;
+            f.y *= H / oldH;
+          }
+        });
+      }
+
+      // ---------- Natuurkunde: zware bollen zakken naar het midden ----------
+      const rMax = () => Math.max(...files.map((f) => f.r));
+      function step() {
+        const list = alive();
+        const cx = W / 2,
+          cy = H / 2,
+          rm = rMax();
+        for (const f of list) {
+          if (mode === "heavy") {
+            const pull = 0.0016 + 0.0042 * (f.r / rm);
+            f.vx += (cx - f.x) * pull;
+            f.vy += (cy - f.y) * pull;
+            f.vx *= 0.84;
+            f.vy *= 0.84;
+            f.x += f.vx;
+            f.y += f.vy;
+          } else {
+            f.x += (f.hx - f.x) * 0.12;
+            f.y += (f.hy - f.y) * 0.12;
+            f.vx = f.vy = 0;
+          }
+          f.rn += (target(f) - f.rn) * 0.14;
+        }
+        if (mode === "heavy") {
+          for (let k = 0; k < 2; k++) {
+            for (let i = 0; i < list.length; i++) {
+              const a = list[i];
+              for (let j = i + 1; j < list.length; j++) {
+                const b = list[j];
+                const dx = b.x - a.x,
+                  dy = b.y - a.y;
+                const min = a.rn + b.rn + 2;
+                const d2 = dx * dx + dy * dy;
+                if (d2 >= min * min) continue;
+                const d = Math.sqrt(d2) || 0.01;
+                const push = (min - d) / d;
+                // De lichtste wijkt het meest: zo duwt een grote bol de kleintjes opzij.
+                const ma = a.rn * a.rn,
+                  mb = b.rn * b.rn,
+                  wa = mb / (ma + mb),
+                  wb = ma / (ma + mb);
+                a.x -= dx * push * wa;
+                a.y -= dy * push * wa;
+                b.x += dx * push * wb;
+                b.y += dy * push * wb;
+              }
+            }
+          }
+          for (const f of list) {
+            f.x = Math.min(W - f.rn, Math.max(f.rn, f.x));
+            f.y = Math.min(H - f.rn, Math.max(f.rn, f.y));
+          }
+        }
+        for (const f of files) {
+          if (f.state !== "leaving") continue;
+          f.vy += 0.7;
+          f.y += f.vy;
+          f.rn *= 0.9;
+          f.alpha *= 0.9;
+          if (f.alpha < 0.03) f.state = "gone";
+        }
+      }
+
+      // ---------- Tekenen ----------
+      const DARK = { video: "#12150f", iso: "#262b23", audio: "#3f4640" };
+      function fillOf(f) {
+        if (f.color) return f.color;
+        if (DARK[f.kind]) return DARK[f.kind];
+        if (f.kind === "zip") return "#e3e7db";
+        return "#ffffff";
+      }
+      const isDark = (f) => !!DARK[f.kind];
+
+      function glyph(f, x, y, r) {
+        const s = r * 0.32;
+        const fg = isDark(f) ? "#f4f6ee" : "#12150f";
+        ctx.fillStyle = fg;
+        ctx.strokeStyle = fg;
+        ctx.lineWidth = Math.max(1, s * 0.14);
+        switch (f.kind) {
+          case "video":
+            ctx.beginPath();
+            ctx.moveTo(x - s * 0.55, y - s * 0.7);
+            ctx.lineTo(x + s * 0.75, y);
+            ctx.lineTo(x - s * 0.55, y + s * 0.7);
+            ctx.closePath();
+            ctx.fill();
+            break;
+          case "iso":
+            ctx.beginPath();
+            ctx.arc(x, y, s * 1.1, 0, Math.PI * 2);
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.arc(x, y, s * 0.28, 0, Math.PI * 2);
+            ctx.fill();
+            break;
+          case "audio":
+            for (let i = -2; i <= 2; i++) {
+              const h = s * (0.5 + 0.5 * Math.abs(Math.sin(i * 1.7 + 1)));
+              ctx.fillRect(x + i * s * 0.42 - s * 0.12, y - h, s * 0.24, h * 2);
+            }
+            break;
+          case "zip":
+            for (let i = -3; i <= 3; i++) ctx.fillRect(x + (i % 2 ? 0 : -s * 0.3), y + i * s * 0.3 - s * 0.1, s * 0.3, s * 0.2);
+            break;
+          case "installer":
+            ctx.strokeRect(x - s, y - s * 0.75, s * 2, s * 1.5);
+            ctx.fillRect(x - s, y - s * 0.75, s * 2, s * 0.4);
+            break;
+          case "doc":
+            for (let i = -1; i <= 1; i++) ctx.fillRect(x - s * 0.8, y + i * s * 0.45 - s * 0.07, s * (i === 1 ? 1 : 1.6), s * 0.14);
+            break;
+          case "screenshot":
+            ctx.strokeRect(x - s, y - s * 0.65, s * 2, s * 1.3);
+            break;
+          case "foto":
+            ctx.fillStyle = "rgba(255,255,255,0.55)";
+            ctx.beginPath();
+            ctx.moveTo(x - s, y + s * 0.6);
+            ctx.lineTo(x - s * 0.2, y - s * 0.3);
+            ctx.lineTo(x + s * 0.3, y + s * 0.2);
+            ctx.lineTo(x + s * 0.6, y - s * 0.05);
+            ctx.lineTo(x + s, y + s * 0.6);
+            ctx.closePath();
+            ctx.fill();
+            ctx.beginPath();
+            ctx.arc(x + s * 0.5, y - s * 0.6, s * 0.22, 0, Math.PI * 2);
+            ctx.fill();
+            break;
+        }
+      }
+
+      function draw(now) {
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        ctx.clearRect(0, 0, W, H);
+        const ease = morph * morph * (3 - 2 * morph);
+
+        // Volgorde: klein eerst, dan liggen de grote en hun labels bovenop tijdens de overgang.
+        const list = files.filter((f) => f.state !== "gone").sort((a, b) => a.rn - b.rn);
+        for (const f of list) {
+          const r = Math.max(0.5, f.rn);
+          const dim = onlyHot && !f.hot && mode === "heavy";
+          ctx.globalAlpha = f.alpha * (dim ? 0.14 : 1);
+          const corner = r * (0.35 + 0.65 * ease);
+          ctx.beginPath();
+          ctx.roundRect(f.x - r, f.y - r, r * 2, r * 2, Math.min(r, corner));
+          ctx.fillStyle = fillOf(f);
+          ctx.fill();
+          if (!isDark(f) && !f.color) {
+            ctx.lineWidth = 1;
+            ctx.strokeStyle = "#d5dacb";
+            ctx.stroke();
+          }
+          if (r > 9) glyph(f, f.x, f.y - (r > 30 ? r * 0.14 : 0), r);
+          if (r > 30) {
+            ctx.fillStyle = isDark(f) ? "#f4f6ee" : "#12150f";
+            ctx.font = `600 ${Math.min(15, r * 0.24)}px "JetBrains Mono", Consolas, monospace`;
+            ctx.textAlign = "center";
+            ctx.textBaseline = "middle";
+            ctx.fillText(fmt(f.bytes), f.x, f.y + r * 0.5);
+          }
+
+          // Opvallers: een limoen ring die zachtjes ademt.
+          if (f.hot && weighed && ease > 0.6 && f.state === "here") {
+            const pulse = 1.5 * Math.sin(now * 0.004 + f.phase);
+            ctx.globalAlpha = f.alpha * (ease - 0.6) * 2.5;
+            ctx.lineWidth = Math.max(3, Math.min(6, r * 0.09));
+            ctx.strokeStyle = "#cdf464";
+            ctx.beginPath();
+            ctx.arc(f.x, f.y, r + 3 + ctx.lineWidth / 2 + pulse, 0, Math.PI * 2);
+            ctx.stroke();
+            ctx.lineWidth = 1;
+            ctx.strokeStyle = "rgba(18,21,15,0.35)";
+            ctx.beginPath();
+            ctx.arc(f.x, f.y, r + 6 + ctx.lineWidth + Math.max(3, Math.min(6, r * 0.09)) / 2 + pulse, 0, Math.PI * 2);
+            ctx.stroke();
+          }
+          if (f === selected || f === hover) {
+            ctx.globalAlpha = 1;
+            ctx.lineWidth = f === selected ? 3 : 2;
+            ctx.strokeStyle = "#12150f";
+            ctx.beginPath();
+            ctx.arc(f.x, f.y, r + (f.hot ? 13 : 4), 0, Math.PI * 2);
+            ctx.stroke();
+          }
+        }
+        ctx.globalAlpha = 1;
+      }
+
+      // ---------- Tellers ----------
+      const $ = (id) => document.getElementById(id);
+      function totals() {
+        const list = alive();
+        const hot = list.filter((f) => f.hot);
+        return {
+          count: list.length,
+          total: list.reduce((s, f) => s + f.bytes, 0),
+          hot: hot.length,
+          back: hot.reduce((s, f) => s + f.bytes, 0),
+        };
+      }
+      function updateStats() {
+        const t = totals();
+        $("statFiles").textContent = String(t.count);
+        $("statTotal").textContent = fmt(t.total);
+        if (!weighed) return;
+        shown.back += (t.back - shown.back) * 0.08;
+        shown.hot += (t.hot - shown.hot) * 0.08;
+        if (Math.abs(t.back - shown.back) < 1e6) shown.back = t.back;
+        if (Math.abs(t.hot - shown.hot) < 0.05) shown.hot = t.hot;
+        $("statBack").textContent = `${nl(shown.back / 1e9, 1)} GB`;
+        $("statHot").textContent = String(Math.round(shown.hot));
+        $("statFreed").textContent = freed > 0 ? `${fmt(freed)} al naar de prullenbak` : "zonder er iets voor te missen";
+      }
+
+      // ---------- Kaart en lijst ----------
+      function esc(s) {
+        return s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+      }
+      function renderCard() {
+        const card = $("card");
+        if (!weighed) return;
+        if (!selected || selected.state !== "here") {
+          card.innerHTML = `<p class="empty">Klik op een bol om te zien wat het is. De bollen met een limoen ring vallen op.</p>`;
+          return;
+        }
+        const f = selected;
+        const where = f.dir ? `Downloads\\${f.dir}` : "Downloads";
+        card.innerHTML = `
+          <div class="mono">${KIND[f.kind]}</div>
+          <div class="name">${esc(f.name)}</div>
+          <div class="size">${fmt(f.bytes)}</div>
+          ${
+            f.hot
+              ? `<div class="reason"><span class="dot"></span><span>${esc(f.reason)}</span></div>`
+              : `<div class="reason calm"><span class="dot"></span><span>Zwaar, maar je gebruikt het nog</span></div>`
+          }
+          <div class="meta">Laatst geopend ${esc(f.opened)} · ${esc(where)}</div>
+          <div class="actions">
+            <button type="button" class="btn" id="reveal">Toon in Verkenner</button>
+            <button type="button" class="btn dark" id="trash">Naar prullenbak</button>
+          </div>`;
+        $("reveal").onclick = () => toast(`Verkenner zou nu ${f.name} tonen`, false);
+        $("trash").onclick = () => trash(f);
+      }
+      function renderRows() {
+        if (!weighed) return;
+        const top = alive()
+          .sort((a, b) => b.bytes - a.bytes)
+          .slice(0, 10);
+        const max = top[0] ? top[0].bytes : 1;
+        $("rows").innerHTML = top
+          .map(
+            (f, i) => `
+            <button type="button" class="row${f.hot ? " hot" : ""}${f === selected ? " sel" : ""}" data-id="${f.id}">
+              <span class="rank">${pad(i + 1)}</span>
+              <span class="n" title="${esc(f.name)}">${esc(f.name)}</span>
+              <span class="s">${fmt(f.bytes)}</span>
+              <span class="bar"><i style="width:${((f.bytes / max) * 100).toFixed(1)}%"></i></span>
+            </button>`,
+          )
+          .join("");
+        for (const el of $("rows").querySelectorAll(".row")) {
+          el.onclick = () => select(files[Number(el.dataset.id)]);
+        }
+      }
+      function select(f) {
+        selected = f;
+        renderCard();
+        renderRows();
+      }
+
+      // ---------- Acties ----------
+      let toastTimer = 0;
+      function toast(text, undo) {
+        $("toastText").textContent = text;
+        $("toastUndo").hidden = !undo;
+        $("toast").classList.add("on");
+        clearTimeout(toastTimer);
+        toastTimer = setTimeout(() => $("toast").classList.remove("on"), 6000);
+      }
+      function trash(f) {
+        f.state = "leaving";
+        f.vy = -6;
+        f.vx = 0;
+        freed += f.bytes;
+        lastTrashed = f;
+        selected = null;
+        renderCard();
+        renderRows();
+        toast(`${f.name} staat in de prullenbak · ${fmt(f.bytes)} vrij`, true);
+      }
+      $("toastUndo").onclick = () => {
+        const f = lastTrashed;
+        if (!f) return;
+        lastTrashed = null;
+        f.state = "here";
+        f.alpha = 1;
+        f.rn = 0;
+        f.x = W / 2 + (Math.random() - 0.5) * 20;
+        f.y = H / 2 + (Math.random() - 0.5) * 20;
+        freed -= f.bytes;
+        $("toast").classList.remove("on");
+        select(f);
+      };
+
+      function setMode(next) {
+        mode = next;
+        const heavy = mode === "heavy";
+        if (heavy && !weighed) weighed = true;
+        $("tabSort").setAttribute("aria-selected", String(!heavy));
+        $("tabHeavy").setAttribute("aria-selected", String(heavy));
+        $("weigh").textContent = heavy ? "Terug naar de donut" : "Wat weegt hier zo zwaar?";
+        $("weigh").classList.toggle("primary", !heavy);
+        $("filter").hidden = !heavy;
+        $("caption").innerHTML = heavy
+          ? `<span class="dot"></span>Elke bol is een bestand · hoe groter, hoe zwaarder`
+          : `<span class="dot"></span>Je Downloads, zoals Netjes ze nu toont`;
+        if (heavy) {
+          for (const f of alive()) {
+            f.vx = (Math.random() - 0.5) * 2;
+            f.vy = (Math.random() - 0.5) * 2;
+          }
+        } else {
+          hover = null;
+        }
+        renderCard();
+        renderRows();
+      }
+      $("weigh").onclick = () => setMode(mode === "heavy" ? "donut" : "heavy");
+      $("tabSort").onclick = () => setMode("donut");
+      $("tabHeavy").onclick = () => setMode("heavy");
+      function setFilter(hot) {
+        onlyHot = hot;
+        $("fAll").setAttribute("aria-pressed", String(!hot));
+        $("fHot").setAttribute("aria-pressed", String(hot));
+      }
+      $("fAll").onclick = () => setFilter(false);
+      $("fHot").onclick = () => setFilter(true);
+
+      // ---------- Muis ----------
+      function hit(e) {
+        if (mode !== "heavy") return null;
+        const rect = cv.getBoundingClientRect();
+        const x = e.clientX - rect.left,
+          y = e.clientY - rect.top;
+        let best = null;
+        for (const f of alive()) {
+          if (onlyHot && !f.hot) continue;
+          const r = Math.max(f.rn, 6);
+          const d = Math.hypot(f.x - x, f.y - y);
+          if (d <= r && (!best || f.rn < best.rn)) best = f;
+        }
+        return best;
+      }
+      cv.addEventListener("pointermove", (e) => {
+        hover = hit(e);
+        cv.style.cursor = hover ? "pointer" : "default";
+        if (hover) {
+          const rect = cv.getBoundingClientRect();
+          tip.innerHTML = `<b>${esc(hover.name)}</b>${fmt(hover.bytes)}${hover.hot ? " · valt op" : ""}`;
+          tip.style.left = `${Math.min(W - 80, Math.max(80, e.clientX - rect.left))}px`;
+          tip.style.top = `${e.clientY - rect.top}px`;
+          tip.classList.add("on");
+        } else {
+          tip.classList.remove("on");
+        }
+      });
+      cv.addEventListener("pointerleave", () => {
+        hover = null;
+        tip.classList.remove("on");
+      });
+      cv.addEventListener("click", (e) => {
+        const f = hit(e);
+        if (f) select(f);
+      });
+
+      // ---------- Lus ----------
+      let last = performance.now();
+      function frame(now) {
+        const dt = Math.min(50, now - last);
+        last = now;
+        const goal = mode === "heavy" ? 1 : 0;
+        morph += Math.sign(goal - morph) * Math.min(Math.abs(goal - morph), dt / 900);
+        step();
+        draw(now);
+        updateStats();
+        requestAnimationFrame(frame);
+      }
+      layout();
+      new ResizeObserver(layout).observe(stage);
+      updateStats();
+      requestAnimationFrame(frame);
+
+      // Voor screenshots en tests: ?zwaar opent meteen de zwaargewichten.
+      if (new URLSearchParams(location.search).has("zwaar")) setMode("heavy");
+    </script>
+  </body>
+</html>
