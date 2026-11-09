@@ -136,7 +136,7 @@ fn normalize_root(root: &str) -> Result<PathBuf, String> {
     #[cfg(not(windows))]
     {
         // realpath behoudt Unix-padbytes, hoofdletters en de wortel `/`.
-        std::fs::canonicalize(root).map_err(|_| NOT_A_FOLDER.to_string())
+        std::fs::canonicalize(root).map_err(|err| folder_error_text(&err, NOT_A_FOLDER))
     }
     #[cfg(windows)]
     {
@@ -167,7 +167,16 @@ fn scan_error_text(error: ScanError) -> String {
     match error {
         ScanError::Forbidden => FORBIDDEN_ROOT.to_string(),
         ScanError::NotADirectory => NOT_A_FOLDER.to_string(),
+        ScanError::PermissionDenied => scan::PERMISSION_DENIED.to_string(),
         io @ ScanError::Io(_) => io.to_string(),
+    }
+}
+
+fn folder_error_text(error: &std::io::Error, fallback: &str) -> String {
+    if scan::is_permission_denied(error) {
+        scan::PERMISSION_DENIED.to_string()
+    } else {
+        fallback.to_string()
     }
 }
 
@@ -213,8 +222,12 @@ fn begin_organize_impl(state: &AppState, root: &str) -> Result<OrganizePlan, Str
         .copied()
         .filter(|&category| moves.iter().any(|m| m.category == category))
         .collect();
-    let created = mover::ensure_folders(&root, &used)
-        .map_err(|e| format!("De categoriemappen konden niet aangemaakt worden: {e}"))?;
+    let created = mover::ensure_folders(&root, &used).map_err(|e| {
+        folder_error_text(
+            &e,
+            &format!("De categoriemappen konden niet aangemaakt worden: {e}"),
+        )
+    })?;
     undo::write_planned_in(&state.log_dir(), &root, &moves, &created)
         .map_err(|e| format!("Het ongedaan-maken-log kon niet bewaard worden: {e}"))?;
 

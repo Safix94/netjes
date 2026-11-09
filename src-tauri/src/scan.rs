@@ -31,6 +31,7 @@ pub struct ScanResult {
 pub enum ScanError {
     NotADirectory,
     Forbidden,
+    PermissionDenied,
     Io(String),
 }
 
@@ -39,12 +40,14 @@ impl fmt::Display for ScanError {
         match self {
             ScanError::NotADirectory => write!(f, "dit is geen map"),
             ScanError::Forbidden => write!(f, "deze map mag niet opgeruimd worden"),
+            ScanError::PermissionDenied => write!(f, "{PERMISSION_DENIED}"),
             ScanError::Io(msg) => write!(f, "de map kon niet gelezen worden: {msg}"),
         }
     }
 }
 
 const FILE_ATTRIBUTE_HIDDEN: u32 = 0x2;
+pub(crate) const PERMISSION_DENIED: &str = "Geen toegang tot deze map. Geef Netjes toegang via Systeeminstellingen > Privacy en beveiliging > Bestanden en mappen en probeer opnieuw.";
 const FILE_ATTRIBUTE_SYSTEM: u32 = 0x4;
 const FILE_ATTRIBUTE_OFFLINE: u32 = 0x1000;
 const FILE_ATTRIBUTE_RECALL_ON_DATA_ACCESS: u32 = 0x40_0000;
@@ -59,7 +62,14 @@ pub fn scan_directory(root: &Path) -> Result<ScanResult, ScanError> {
     if paths::is_forbidden_root(root) {
         return Err(ScanError::Forbidden);
     }
-    if !root.is_dir() {
+    let metadata = fs::metadata(root).map_err(|err| {
+        if err.kind() == std::io::ErrorKind::NotFound {
+            ScanError::NotADirectory
+        } else {
+            io_error(err)
+        }
+    })?;
+    if !metadata.is_dir() {
         return Err(ScanError::NotADirectory);
     }
 
@@ -151,8 +161,18 @@ pub fn is_placeholder(attrs: u32) -> bool {
     attrs & (FILE_ATTRIBUTE_RECALL_ON_DATA_ACCESS | FILE_ATTRIBUTE_OFFLINE) != 0
 }
 
+pub(crate) fn is_permission_denied(err: &std::io::Error) -> bool {
+    cfg!(target_os = "macos")
+        && (err.kind() == std::io::ErrorKind::PermissionDenied
+            || matches!(err.raw_os_error(), Some(1 | 13)))
+}
+
 fn io_error(err: std::io::Error) -> ScanError {
-    ScanError::Io(err.to_string())
+    if is_permission_denied(&err) {
+        ScanError::PermissionDenied
+    } else {
+        ScanError::Io(err.to_string())
+    }
 }
 
 fn modified_ms(metadata: &fs::Metadata) -> u64 {

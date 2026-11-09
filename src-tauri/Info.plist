@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>NSDownloadsFolderUsageDescription</key>
+  <string>Netjes leest en sorteert de bestanden in je Downloads-map wanneer je opruimt.</string>
+  <key>NSDesktopFolderUsageDescription</key>
+  <string>Netjes leest en sorteert de bestanden op je bureaublad als je die map kiest.</string>
+  <key>NSDocumentsFolderUsageDescription</key>
+  <string>Netjes leest en sorteert de bestanden in je Documenten-map als je die map kiest.</string>
+</dict>
+</plist>

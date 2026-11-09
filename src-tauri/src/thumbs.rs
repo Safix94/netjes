@@ -1,5 +1,5 @@
-//! Miniaturen zoals Verkenner ze toont, via de Windows-shell (`IShellItemImageFactory`), als PNG
-//! in de schijfcache `%LOCALAPPDATA%\Netjes\thumbs`. De UI laadt die PNG's en tekent zelf een
+//! Native miniaturen via de Windows-shell of macOS Quick Look, als PNG in de lokale
+//! schijfcache. De UI laadt die PNG's en tekent zelf een
 //! tegel voor bestanden zonder miniatuur. Niets hier mag panieken: elke fout wordt `None`.
 
 use crate::paths::app_data_dir;
@@ -61,7 +61,13 @@ fn default_cache_dir() -> PathBuf {
 fn thumbnail_with_com(cache_dir: &Path, path: &Path, px: u32) -> Option<PathBuf> {
     // Enkel een bestaand gewoon bestand: een map of een weggevallen netwerkpad krijgt geen
     // shell-aanroep, want die kan blijven wachten.
-    let metadata = fs::metadata(path).ok().filter(fs::Metadata::is_file)?;
+    if !(1..=1024).contains(&px) {
+        return None;
+    }
+    let metadata = fs::symlink_metadata(path).ok()?;
+    if !crate::scan::is_processable_file(path, &metadata) {
+        return None;
+    }
     let key = thumb_cache_key(path, metadata.len(), modified_ms(&metadata), px);
     let cached = cache_dir.join(format!("{key}.png"));
     if cached.is_file() {
@@ -238,8 +244,63 @@ mod shell {
     }
 }
 
-/// Buiten Windows bestaat er geen shell: nooit een miniatuur.
-#[cfg(not(windows))]
+#[cfg(target_os = "macos")]
+mod shell {
+    use image::RgbaImage;
+    use std::ffi::CString;
+    use std::os::unix::ffi::OsStrExt;
+    use std::path::Path;
+
+    // Keeps the existing batch interface shared with the Windows COM implementation.
+    pub struct ComGuard;
+    impl ComGuard {
+        pub fn new() -> Self {
+            Self
+        }
+    }
+
+    unsafe extern "C" {
+        fn netjes_macos_thumbnail(
+            path: *const std::ffi::c_char,
+            px: u32,
+            timeout_ms: u32,
+            length: *mut usize,
+        ) -> *mut u8;
+        fn netjes_macos_thumbnail_free(bytes: *mut u8);
+    }
+
+    struct NativePng(*mut u8);
+    impl Drop for NativePng {
+        fn drop(&mut self) {
+            // SAFETY: the bridge returns a malloc buffer, freed exactly once by its own allocator.
+            unsafe { netjes_macos_thumbnail_free(self.0) };
+        }
+    }
+
+    pub fn render(path: &Path, px: u32) -> Option<RgbaImage> {
+        render_with_timeout(path, px, 3000)
+    }
+
+    pub(super) fn render_with_timeout(path: &Path, px: u32, timeout_ms: u32) -> Option<RgbaImage> {
+        let path = CString::new(path.as_os_str().as_bytes()).ok()?;
+        let mut length = 0;
+        // SAFETY: the bridge copies path synchronously and never captures either Rust pointer.
+        let png = NativePng(unsafe {
+            netjes_macos_thumbnail(path.as_ptr(), px, timeout_ms, &mut length)
+        });
+        if png.0.is_null() || length == 0 || length > 16 * 1024 * 1024 {
+            return None;
+        }
+        // SAFETY: a non-null bridge result owns exactly length initialized bytes until Drop.
+        let bytes = unsafe { std::slice::from_raw_parts(png.0, length) };
+        image::load_from_memory_with_format(bytes, image::ImageFormat::Png)
+            .ok()
+            .map(|image| image.to_rgba8())
+    }
+}
+
+/// Niet-ondersteunde platforms houden de gewone bestandstegel.
+#[cfg(not(any(windows, target_os = "macos")))]
 mod shell {
     use image::RgbaImage;
     use std::path::Path;
@@ -412,5 +473,40 @@ mod tests {
         let key = thumb_cache_key(&link, metadata.len(), modified_ms(&metadata), 96);
         write_png(&cache.path().join(format!("{key}.png")));
         assert_eq!(get_thumbnail_in(cache.path(), &link, 96), None);
+    }
+
+    #[test]
+    fn skipped_source_cannot_use_an_existing_cache_entry() {
+        let src = tempdir().unwrap();
+        let cache = tempdir().unwrap();
+        for name in [".verborgen.png", "foto.png.part", "foto.png.crdownload"] {
+            let png = src.path().join(name);
+            write_png(&png);
+            let metadata = fs::metadata(&png).unwrap();
+            let key = thumb_cache_key(&png, metadata.len(), modified_ms(&metadata), 96);
+            write_png(&cache.path().join(format!("{key}.png")));
+            assert_eq!(get_thumbnail_in(cache.path(), &png, 96), None);
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn mac_expired_requests_return_promptly_and_later_requests_still_render() {
+        let src = tempdir().unwrap();
+        let png = src.path().join("tijdslimiet.png");
+        write_png(&png);
+        let start = std::time::Instant::now();
+        for _ in 0..16 {
+            assert!(shell::render_with_timeout(&png, 96, 0).is_none());
+        }
+        assert!(start.elapsed() < std::time::Duration::from_secs(5));
+        // Cancellation callbacks may still be queued; none owns a Rust output pointer.
+        std::thread::sleep(std::time::Duration::from_millis(100));
+        let rendered = shell::render(&png, 96).expect("een latere aanvraag blijft werken");
+        assert_eq!(
+            *rendered.get_pixel(rendered.width() / 2, rendered.height() / 2),
+            Rgba([200, 40, 40, 255])
+        );
+        assert!(shell::render(Path::new("ongeldig\0.png"), 96).is_none());
     }
 }

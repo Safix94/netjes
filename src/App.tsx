@@ -62,7 +62,7 @@ interface Viewer {
 const NONE: ReadonlySet<string> = new Set();
 const NO_FILES: FileEntry[] = [];
 const NO_ERRORS: ErrorItem[] = [];
-/** Miniaturen per aanvraag aan de Windows-shell. */
+/** Miniaturen per aanvraag aan de native voorziening. */
 const THUMB_BATCH = 48;
 /** Pixelmaat van de miniaturen; op een scherm met schaal 2 is het beeldvlak van een tegel 120 px. */
 const THUMB_PX = 128;
@@ -73,7 +73,7 @@ function folderNameOf(path: string): string {
 }
 
 function joinPath(root: string, folder: string): string {
-  return root.endsWith("\\") || root.endsWith("/") ? root + folder : `${root}\\${folder}`;
+  return root.endsWith("\\") || root.endsWith("/") ? root + folder : `${root}${root.startsWith("/") ? "/" : "\\"}${folder}`;
 }
 
 /** Dezelfde map geeft dezelfde hoop. */
@@ -211,8 +211,8 @@ export default function App() {
   useEffect(() => {
     void (async () => {
       try {
-        const [cats, downloads] = await Promise.all([getCategories(), getDownloadsDir()]);
-        setCategories(cats);
+        setCategories(await getCategories());
+        const downloads = await getDownloadsDir();
         await runScan(downloads);
       } catch (e) {
         setError(errorText(e));

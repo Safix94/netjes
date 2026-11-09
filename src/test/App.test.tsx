@@ -105,6 +105,7 @@ afterEach(() => {
 describe("App", () => {
   it("uses Command on Mac, announces the shortcut and reveals folders in Finder", async () => {
     vi.spyOn(window.navigator, "platform", "get").mockReturnValue("MacIntel");
+    vi.mocked(api.getDownloadsDir).mockResolvedValue("/Users/test/Downloads");
     vi.mocked(api.listFolderFiles).mockResolvedValue([file("fotos")]);
     render(<App />);
     await screen.findByText(copy.statusReady(4));
@@ -116,7 +117,7 @@ describe("App", () => {
     expect(await screen.findByText(copy.disorganize)).toBeInTheDocument();
     fireEvent.click(document.querySelector('[data-cat="fotos"]')!);
     fireEvent.click(await screen.findByRole("button", { name: "Toon in Finder" }));
-    expect(api.revealInExplorer).toHaveBeenCalled();
+    expect(api.revealInExplorer).toHaveBeenCalledWith("/Users/test/Downloads/Foto's");
   });
 
   it("keeps the permission recovery message and lets the user retry by choosing a folder", async () => {
@@ -129,6 +130,7 @@ describe("App", () => {
     fireEvent.click(button(copy.chooseFolder));
     expect(await screen.findByText(copy.statusReady(4))).toBeInTheDocument();
     expect(screen.queryByText(denied)).not.toBeInTheDocument();
+    expect(document.querySelector('[data-cat="fotos"]')).toBeInTheDocument();
   });
   it("scans the Downloads folder on start and shows the real numbers", async () => {
     render(<App />);
