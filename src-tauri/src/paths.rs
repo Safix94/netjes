@@ -102,10 +102,10 @@ pub fn is_forbidden_root(path: &Path) -> bool {
     if real.parent().is_none() {
         return true;
     }
-    if let (Ok(meta), Some(parent)) = (std::fs::metadata(&real), real.parent()) {
-        if std::fs::metadata(parent).is_ok_and(|parent| meta.dev() != parent.dev()) {
-            return true; // Een mountpoint, ook buiten /Volumes.
-        }
+    if let (Ok(meta), Some(parent)) = (std::fs::metadata(&real), real.parent())
+        && std::fs::metadata(parent).is_ok_and(|parent| meta.dev() != parent.dev())
+    {
+        return true; // Een mountpoint, ook buiten /Volumes.
     }
     let same_directory = |a: &Path, b: &Path| match (std::fs::metadata(a), std::fs::metadata(b)) {
         (Ok(a), Ok(b)) => a.dev() == b.dev() && a.ino() == b.ino(),
