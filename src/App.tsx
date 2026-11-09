@@ -30,6 +30,7 @@ import {
   type Category,
   type CategoryInfo,
   type FileEntry,
+  type UndoResult,
 } from "./lib/api";
 import { buildAnimModel, chunk, thumbOrder, type AnimModel } from "./lib/animModel";
 import { errorText } from "./lib/errors";
@@ -73,7 +74,8 @@ function folderNameOf(path: string): string {
 }
 
 function joinPath(root: string, folder: string): string {
-  return root.endsWith("\\") || root.endsWith("/") ? root + folder : `${root}${root.startsWith("/") ? "/" : "\\"}${folder}`;
+  if (root.startsWith("/")) return root.endsWith("/") ? root + folder : `${root}/${folder}`;
+  return root.endsWith("\\") || root.endsWith("/") ? root + folder : `${root}\\${folder}`;
 }
 
 /** Dezelfde map geeft dezelfde hoop. */
@@ -393,11 +395,12 @@ export default function App() {
     }
   };
 
-  const restore = async (root: string, action: (root: string) => Promise<unknown>): Promise<View | null> => {
+  const restore = async (root: string, action: (root: string) => Promise<UndoResult>): Promise<View | null> => {
     setBusy("undoing");
     let failure: string | null = null;
     try {
-      await action(root);
+      const result = await action(root);
+      failure = result.errors.map((outcome) => errorText(outcome.error)).join("\n") || null;
     } catch (e) {
       failure = errorText(e);
     }
