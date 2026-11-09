@@ -238,7 +238,6 @@ mod tests {
         assert!(!root.path().join("Foto's").join("vast.jpg").exists());
     }
 
-    #[cfg(windows)]
     #[test]
     fn rename_no_replace_refuses_existing_target_and_leaves_both_untouched() {
         let dir = tempdir().unwrap();
@@ -403,5 +402,51 @@ mod tests {
 
         assert_eq!(err.kind(), ErrorKind::NotFound);
         assert!(!target.exists());
+    }
+
+    #[test]
+    fn move_refuses_directory_sources() {
+        let root = tempdir().unwrap();
+        let src = root.path().join("pakket.app");
+        fs::create_dir(&src).unwrap();
+        ensure_folders(root.path(), &[Category::Fotos]).unwrap();
+        let outcome = move_one(&planned(1, &src, root.path(), "pakket.app", Category::Fotos));
+        assert!(!outcome.ok);
+        assert!(src.is_dir());
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn rename_no_replace_preserves_native_path_bytes_and_system_errors() {
+        use std::os::unix::ffi::OsStringExt;
+        let root = tempdir().unwrap();
+        let src = root.path().join(std::ffi::OsString::from_vec(vec![b'a', 0xff]));
+        let dest = root.path().join("doel");
+        fs::write(&src, b"native").unwrap();
+        rename_no_replace(&src, &dest).unwrap();
+        assert_eq!(fs::read(&dest).unwrap(), b"native");
+        assert_eq!(rename_no_replace(&src, &root.path().join("weg")).unwrap_err().kind(), ErrorKind::NotFound);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn move_refuses_symlink_source_and_destination_directory() {
+        use std::os::unix::fs::symlink;
+        let root = tempdir().unwrap();
+        let outside = tempdir().unwrap();
+        let real = outside.path().join("real.jpg");
+        fs::write(&real, b"blijft").unwrap();
+        let src = root.path().join("link.jpg");
+        symlink(&real, &src).unwrap();
+        ensure_folders(root.path(), &[Category::Fotos]).unwrap();
+        assert!(!move_one(&planned(1, &src, root.path(), "link.jpg", Category::Fotos)).ok);
+        fs::remove_file(&src).unwrap();
+        fs::write(&src, b"lokaal").unwrap();
+        fs::remove_dir(root.path().join("Foto's")).unwrap();
+        symlink(outside.path(), root.path().join("Foto's")).unwrap();
+        assert!(ensure_folders(root.path(), &[Category::Fotos]).is_err());
+        assert!(!move_one(&planned(1, &src, root.path(), "link.jpg", Category::Fotos)).ok);
+        assert_eq!(fs::read(src).unwrap(), b"lokaal");
+        assert_eq!(fs::read(real).unwrap(), b"blijft");
     }
 }

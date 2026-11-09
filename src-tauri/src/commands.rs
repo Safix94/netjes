@@ -410,7 +410,7 @@ mod tests {
     #[test]
     fn scan_stores_and_returns_one_canonical_root() {
         let fx = Fixture::new();
-        let with_slash = format!("{}\\", fx.root_str());
+        let with_slash = format!("{}{sep}", fx.root_str(), sep = std::path::MAIN_SEPARATOR);
         let scan = scan_impl(&fx.state, &with_slash).unwrap();
         assert_eq!(scan.root, fx.root_str());
         assert!(!scan.root.starts_with(r"\\?\"));
@@ -418,6 +418,7 @@ mod tests {
         assert_eq!(stored.as_ref().unwrap().root, scan.root);
     }
 
+    #[cfg(windows)]
     #[test]
     fn normalize_root_strips_verbatim_prefix_and_trailing_separators() {
         assert_eq!(
@@ -435,11 +436,16 @@ mod tests {
     #[test]
     fn scan_refuses_forbidden_roots_and_non_folders() {
         let fx = Fixture::new();
+        #[cfg(windows)]
+        let protected = [r"C:\Windows", r"C:\"];
+        #[cfg(not(windows))]
+        let protected = ["/System", "/"];
+        for path in protected {
         assert_eq!(
-            scan_impl(&fx.state, r"C:\Windows").unwrap_err(),
+            scan_impl(&fx.state, path).unwrap_err(),
             FORBIDDEN_ROOT
         );
-        assert_eq!(scan_impl(&fx.state, r"C:\").unwrap_err(), FORBIDDEN_ROOT);
+        }
         let file = fx.root().join("b.pdf");
         assert_eq!(
             scan_impl(&fx.state, &root_string(&file)).unwrap_err(),
@@ -577,7 +583,7 @@ mod tests {
         let ids: Vec<u32> = plan.moves.iter().map(|m| m.id).collect();
         move_files_impl(&fx.state, &root, &ids).unwrap();
 
-        let trailing_backslash = format!("{root}\\");
+        let trailing_backslash = format!("{root}{sep}", sep = std::path::MAIN_SEPARATOR);
         let forward_slashes = format!("{}/", root.replace('\\', "/"));
         for spelling in [&trailing_backslash, &forward_slashes] {
             assert_eq!(
@@ -631,10 +637,26 @@ mod tests {
             list_folder_files_impl(&root, Category::Audio).unwrap_err(),
             NOT_A_FOLDER
         );
+        #[cfg(windows)]
         assert_eq!(
             list_folder_files_impl(r"C:\Windows", Category::Fotos).unwrap_err(),
             FORBIDDEN_ROOT
         );
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn mac_normalize_keeps_root_case_and_resolves_existing_symlinks() {
+        use std::os::unix::fs::symlink;
+        assert_eq!(normalize_root("/").unwrap(), Path::new("/"));
+        assert!(normalize_root("").is_err());
+        let tmp = tempdir().unwrap();
+        let actual = tmp.path().join("DownloadsUpper");
+        fs::create_dir(&actual).unwrap();
+        let alias = tmp.path().join("link");
+        symlink(&actual, &alias).unwrap();
+        assert_eq!(normalize_root(&format!("{}/", alias.display())).unwrap(), fs::canonicalize(&actual).unwrap());
+        assert!(normalize_root(&actual.to_string_lossy()).unwrap().ends_with("DownloadsUpper"));
     }
 }
 

@@ -75,6 +75,7 @@ fn is_drive_root(normalized: &str) -> bool {
 mod tests {
     use super::*;
 
+    #[cfg(windows)]
     #[test]
     fn forbidden_roots() {
         assert!(is_forbidden_root(Path::new("C:\\")));
@@ -82,6 +83,7 @@ mod tests {
         assert!(!is_forbidden_root(Path::new("C:\\Users\\x\\Downloads")));
     }
 
+    #[cfg(windows)]
     #[test]
     fn forbidden_drive_roots_in_any_spelling() {
         assert!(is_forbidden_root(Path::new("C:")));
@@ -89,6 +91,7 @@ mod tests {
         assert!(is_forbidden_root(Path::new("D:\\")));
     }
 
+    #[cfg(windows)]
     #[test]
     fn forbidden_windows_and_program_files_trees_case_insensitive() {
         assert!(is_forbidden_root(Path::new("c:\\windows")));
@@ -99,6 +102,7 @@ mod tests {
         assert!(is_forbidden_root(Path::new("C:\\Program Files (x86)\\App")));
     }
 
+    #[cfg(windows)]
     #[test]
     fn lookalike_names_are_not_forbidden() {
         assert!(!is_forbidden_root(Path::new("C:\\Windows.old.backup")));
@@ -119,5 +123,37 @@ mod tests {
         let dir = app_data_dir();
         assert!(dir.is_dir());
         assert_eq!(dir.file_name().and_then(|n| n.to_str()), Some("Netjes"));
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn mac_protects_system_trees_home_library_and_mount_roots() {
+        for path in ["/", "/System", "/System/Library", "/Library", "/Applications", "/usr/bin", "/private/etc", "/dev", "/Volumes", "/System/Volumes/Data"] {
+            assert!(is_forbidden_root(Path::new(path)), "{path}");
+        }
+        let home = dirs::home_dir().unwrap();
+        assert!(is_forbidden_root(&home));
+        assert!(is_forbidden_root(&home.join("Library")));
+        assert!(is_forbidden_root(&home.join("Library/Caches")));
+        assert!(!is_forbidden_root(&home.join("Downloads")));
+        let tmp = tempfile::tempdir().unwrap();
+        assert!(!is_forbidden_root(tmp.path()));
+        assert!(!is_forbidden_root(&tmp.path().join("Library")));
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn mac_symlinks_and_parent_components_cannot_bypass_protection() {
+        use std::os::unix::fs::symlink;
+        let tmp = tempfile::tempdir().unwrap();
+        let link = tmp.path().join("gewone-map");
+        symlink("/System", &link).unwrap();
+        assert!(is_forbidden_root(&link));
+        assert!(is_forbidden_root(&link.join("Library")));
+        assert!(is_forbidden_root(&link.join("Library/../Library")));
+        let home_link = tmp.path().join("thuis");
+        symlink(dirs::home_dir().unwrap(), &home_link).unwrap();
+        assert!(is_forbidden_root(&home_link));
+        assert!(is_forbidden_root(&home_link.join("Library")));
     }
 }

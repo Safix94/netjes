@@ -262,6 +262,7 @@ mod tests {
             scan_directory(&dir.path().join("bestaat-niet")),
             Err(ScanError::NotADirectory)
         ));
+        #[cfg(windows)]
         assert!(matches!(
             scan_directory(Path::new("C:\\")),
             Err(ScanError::Forbidden)
@@ -332,5 +333,42 @@ mod tests {
         assert!(is_placeholder(0x400000));
         assert!(is_placeholder(0x1000));
         assert!(!is_placeholder(0x20));
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn mac_scan_skips_hidden_downloads_cloud_names_and_packages() {
+        let dir = tempdir().unwrap();
+        for name in ["local.txt", "hidden.txt", ".env", "file.icloud", "file.download", "file.part"] {
+            touch(dir.path(), name);
+        }
+        fs::create_dir(dir.path().join("App.app")).unwrap();
+        touch(&dir.path().join("App.app"), "inside.txt");
+        assert!(std::process::Command::new("chflags").arg("hidden").arg(dir.path().join("hidden.txt")).status().unwrap().success());
+        let result = scan_directory(dir.path()).unwrap();
+        assert_eq!(result.files.iter().map(|f| f.name.as_str()).collect::<Vec<_>>(), ["local.txt"]);
+        assert_eq!(result.skipped, 5);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn scan_skips_special_files_without_opening_them() {
+        let dir = tempdir().unwrap();
+        let socket = std::os::unix::net::UnixListener::bind(dir.path().join("socket")).unwrap();
+        let result = scan_directory(dir.path()).unwrap();
+        assert!(result.files.is_empty());
+        assert_eq!(result.skipped, 1);
+        drop(socket);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn scan_skips_offline_files_before_processing() {
+        let dir = tempdir().unwrap();
+        touch(dir.path(), "offline.txt");
+        assert!(std::process::Command::new("attrib").arg("+o").arg(dir.path().join("offline.txt")).status().unwrap().success());
+        let result = scan_directory(dir.path()).unwrap();
+        assert!(result.files.is_empty());
+        assert_eq!(result.skipped, 1);
     }
 }
