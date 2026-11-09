@@ -111,6 +111,20 @@ pub fn is_forbidden_root(path: &Path) -> bool {
         (Ok(a), Ok(b)) => a.dev() == b.dev() && a.ino() == b.ino(),
         _ => false,
     };
+    // De containers zelf zijn systeemlocaties; gewone mappen eronder (zoals tijdelijke tests) niet.
+    if [
+        "/Volumes",
+        "/Users",
+        "/private",
+        "/private/var",
+        "/private/tmp",
+        "/private/var/folders",
+    ]
+    .iter()
+    .any(|path| real == Path::new(path) || same_directory(&real, Path::new(path)))
+    {
+        return true;
+    }
     let home = dirs::home_dir();
     if home
         .as_ref()
@@ -147,7 +161,6 @@ pub fn is_forbidden_root(path: &Path) -> bool {
                     .ancestors()
                     .any(|ancestor| same_directory(ancestor, &tree))
         })
-        || real == Path::new("/Volumes")
 }
 
 #[cfg(not(any(windows, target_os = "macos")))]
@@ -222,6 +235,9 @@ mod tests {
             "/private/etc",
             "/dev",
             "/Volumes",
+            "/private",
+            "/var",
+            "/Users",
             "/System/Volumes/Data",
         ] {
             assert!(is_forbidden_root(Path::new(path)), "{path}");
@@ -250,5 +266,87 @@ mod tests {
         symlink(dirs::home_dir().unwrap(), &home_link).unwrap();
         assert!(is_forbidden_root(&home_link));
         assert!(is_forbidden_root(&home_link.join("Library")));
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn mac_mounted_case_sensitive_volume_keeps_recovery_logs_separate() {
+        use crate::{mover, planner, scan, undo};
+        use std::process::Command;
+
+        let temp = tempfile::tempdir().unwrap();
+        let image = temp.path().join("test.dmg");
+        let mount = temp.path().join("volume");
+        std::fs::create_dir(&mount).unwrap();
+        let created = Command::new("hdiutil")
+            .args([
+                "create",
+                "-quiet",
+                "-size",
+                "32m",
+                "-fs",
+                "HFSX",
+                "-volname",
+                "NetjesTests",
+            ])
+            .arg(&image)
+            .output()
+            .unwrap();
+        assert!(
+            created.status.success(),
+            "{}",
+            String::from_utf8_lossy(&created.stderr)
+        );
+        let attached = Command::new("hdiutil")
+            .args(["attach", "-quiet", "-nobrowse", "-mountpoint"])
+            .arg(&mount)
+            .arg(&image)
+            .output()
+            .unwrap();
+        assert!(
+            attached.status.success(),
+            "{}",
+            String::from_utf8_lossy(&attached.stderr)
+        );
+        struct MountedVolume(PathBuf);
+        impl Drop for MountedVolume {
+            fn drop(&mut self) {
+                let _ = Command::new("hdiutil")
+                    .args(["detach", "-quiet"])
+                    .arg(&self.0)
+                    .status();
+            }
+        }
+        let _mounted = MountedVolume(mount.clone());
+        assert!(is_forbidden_root(&mount));
+        let link = temp.path().join("volume-link");
+        std::os::unix::fs::symlink(&mount, &link).unwrap();
+        assert!(is_forbidden_root(&link));
+        let logs = temp.path().join("logs");
+        let upper = mount.join("Downloads");
+        let lower = mount.join("downloads");
+        for (root, content) in [(&upper, b"boven".as_slice()), (&lower, b"onder".as_slice())] {
+            std::fs::create_dir(root).unwrap();
+            assert!(!is_forbidden_root(root));
+            std::fs::write(root.join("a.jpg"), content).unwrap();
+            let scanned = scan::scan_directory(root).unwrap();
+            let moves = planner::plan_moves(root, &scanned.files);
+            let folders =
+                mover::ensure_folders(root, &[crate::categories::Category::Fotos]).unwrap();
+            undo::write_planned_in(&logs, root, &moves, &folders).unwrap();
+            let outcomes = mover::move_many(&moves);
+            assert!(outcomes.iter().all(|outcome| outcome.ok), "{outcomes:?}");
+            undo::apply_outcomes_in(&logs, root, &outcomes).unwrap();
+        }
+        assert_ne!(
+            undo::log_path_in(&logs, &upper),
+            undo::log_path_in(&logs, &lower)
+        );
+        assert_eq!(undo::restore_in(&logs, &upper, true).unwrap().restored, 1);
+        assert_eq!(std::fs::read(upper.join("a.jpg")).unwrap(), b"boven");
+        assert!(!lower.join("a.jpg").exists());
+        assert_eq!(undo::info_in(&logs, &lower).unwrap().count, 1);
+        assert_eq!(undo::restore_in(&logs, &lower, true).unwrap().restored, 1);
+        assert_eq!(std::fs::read(lower.join("a.jpg")).unwrap(), b"onder");
     }
 }
