@@ -103,6 +103,22 @@ afterEach(() => {
 });
 
 describe("App", () => {
+  it.each([
+    ["MacIntel", "/Users/test/Invoices\\2026", "Invoices\\2026"],
+    ["MacIntel", "/Users/test/Downloads\\", "Downloads\\"],
+    ["MacIntel", "/Users/test/Invoices\\2026/", "Invoices\\2026"],
+    ["MacIntel", "/Users/test/Downloads/", "Downloads"],
+    ["Win32", `${ROOT}\\`, "Downloads"],
+    ["Win32", "C:/Users/Test/Downloads/", "Downloads"],
+    ["Win32", "C:\\Users/Test\\Downloads/", "Downloads"],
+  ])("shows the native folder name in the heading for %s root %s", async (platform, root, expected) => {
+    vi.spyOn(window.navigator, "platform", "get").mockReturnValue(platform);
+    vi.mocked(api.getDownloadsDir).mockResolvedValue(root);
+    render(<App />);
+    await screen.findByText(copy.statusReady(4));
+    expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent(`Mijn ${expected} opruimen`);
+  });
+
   it("uses Command on Mac, announces the shortcut and reveals folders in Finder", async () => {
     vi.spyOn(window.navigator, "platform", "get").mockReturnValue("MacIntel");
     vi.mocked(api.getDownloadsDir).mockResolvedValue("/Users/test/Downloads");

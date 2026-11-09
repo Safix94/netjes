@@ -69,7 +69,7 @@ const THUMB_BATCH = 48;
 const THUMB_PX = 128;
 
 function folderNameOf(path: string): string {
-  const parts = path.split(/[\\/]/).filter((part) => part.length > 0);
+  const parts = path.split(path.startsWith("/") ? /\// : /[\\/]/).filter((part) => part.length > 0);
   return parts.length > 0 ? parts[parts.length - 1] : copy.defaultFolder;
 }
 
