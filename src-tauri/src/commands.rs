@@ -180,6 +180,20 @@ fn folder_error_text(error: &std::io::Error, fallback: &str) -> String {
     }
 }
 
+fn recover_permission_errors(outcomes: &mut [MoveOutcome]) {
+    if !cfg!(target_os = "macos") {
+        return;
+    }
+    // Move/undo outcomes already contain Rust io::Error display strings, including the OS code.
+    for outcome in outcomes {
+        if let Some(error) = &mut outcome.error
+            && (error.ends_with("(os error 1)") || error.ends_with("(os error 13)"))
+        {
+            *error = scan::PERMISSION_DENIED.to_string();
+        }
+    }
+}
+
 fn scan_impl(state: &AppState, root: &str) -> Result<ScanResult, String> {
     let root = normalize_root(root)?;
     let mut result = scan::scan_directory(&root).map_err(scan_error_text)?;
@@ -273,6 +287,7 @@ fn move_files_impl(state: &AppState, root: &str, ids: &[u32]) -> Result<Vec<Move
     }
 
     let mut outcomes = mover::move_many(&selected);
+    recover_permission_errors(&mut outcomes);
     if let Err(e) = undo::apply_outcomes_in(&state.log_dir(), &root, &outcomes) {
         // De bestanden zijn al verplaatst; meld dat het log dat niet weet, op dezelfde manier als
         // `undo::restore` dat doet.
@@ -317,7 +332,10 @@ fn restore_impl(
     let restored = undo::restore_in(&state.log_dir(), &root, remove_created_folders);
     // Na het terugzetten klopt het plan niet meer; een nieuwe ronde begint met `begin_organize`.
     *lock(&state.plan) = None;
-    restored.map_err(|e| format!("Het terugzetten is mislukt: {e}"))
+    let mut restored =
+        restored.map_err(|e| folder_error_text(&e, &format!("Het terugzetten is mislukt: {e}")))?;
+    recover_permission_errors(&mut restored.errors);
+    Ok(restored)
 }
 
 fn list_folder_files_impl(root: &str, category: Category) -> Result<Vec<FileEntry>, String> {
@@ -348,9 +366,11 @@ mod tests {
         fs::set_permissions(&parent, fs::Permissions::from_mode(0o000)).unwrap();
         let normalized = normalize_root(&child.to_string_lossy());
         let scanned = scan_impl(&AppState::default(), &child.to_string_lossy());
+        let unreadable = scan::scan_directory(&parent).map_err(scan_error_text);
         fs::set_permissions(&parent, fs::Permissions::from_mode(0o700)).unwrap();
         assert!(normalized.unwrap_err().contains("Systeeminstellingen"));
         assert!(scanned.unwrap_err().contains("Systeeminstellingen"));
+        assert_eq!(unreadable.unwrap_err(), scan::PERMISSION_DENIED);
     }
 
     #[cfg(target_os = "macos")]
