@@ -353,6 +353,30 @@ mod tests {
         assert!(scanned.unwrap_err().contains("Systeeminstellingen"));
     }
 
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn mac_move_and_undo_permission_failures_keep_the_recovery_route() {
+        use std::os::unix::fs::PermissionsExt;
+        let fx = Fixture::new();
+        let (root, plan) = fx.scanned_and_planned();
+        let id = Fixture::id_of(&plan, "b.pdf");
+        fs::set_permissions(fx.root(), fs::Permissions::from_mode(0o555)).unwrap();
+        let failed_move = move_files_impl(&fx.state, &root, &[id]).unwrap();
+        fs::set_permissions(fx.root(), fs::Permissions::from_mode(0o700)).unwrap();
+        assert!(!failed_move[0].ok);
+        let failure = failed_move[0].error.as_deref().unwrap();
+        assert!(failure.contains("Systeeminstellingen"), "{failure}");
+
+        assert!(move_files_impl(&fx.state, &root, &[id]).unwrap()[0].ok);
+        fs::set_permissions(fx.root(), fs::Permissions::from_mode(0o555)).unwrap();
+        let failed_undo = undo_organize_impl(&fx.state, &root).unwrap();
+        fs::set_permissions(fx.root(), fs::Permissions::from_mode(0o700)).unwrap();
+        assert_eq!(failed_undo.restored, 0);
+        let failure = failed_undo.errors[0].error.as_deref().unwrap();
+        assert!(failure.contains("Systeeminstellingen"), "{failure}");
+        assert_eq!(undo_organize_impl(&fx.state, &root).unwrap().restored, 1);
+    }
+
     struct Fixture {
         root_dir: TempDir,
         _logs: TempDir,
