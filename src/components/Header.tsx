@@ -70,7 +70,7 @@ export function Header({
           type="button"
           className={`mo-btn sec${recording ? " on" : ""}`}
           aria-pressed={recording}
-          aria-keyshortcuts="Control+Shift+R"
+          aria-keyshortcuts={copy.recordingShortcut}
           title={copy.recordingHint}
           onClick={onToggleRecording}
         >

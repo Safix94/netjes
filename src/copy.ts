@@ -1,6 +1,7 @@
 // Alle zichtbare tekst van de app, in Belgisch Nederlands (je-vorm). Geen gedachtestreepjes,
 // geen uitroeptekens, geen emoji. De test in src/test/copy.test.ts bewaakt dat.
 import { countLabel } from "./lib/format";
+import { isMac } from "./lib/platform";
 
 const files = (n: number): string => countLabel(n, "bestand", "bestanden");
 
@@ -23,7 +24,8 @@ export const copy = {
   resort: "Opnieuw sorteren",
   chooseFolder: "Map kiezen",
   recording: "Opname",
-  recordingHint: "Opnamemodus aan of uit (Ctrl+Shift+R)",
+  get recordingHint() { return `Opnamemodus aan of uit (${isMac() ? "Cmd" : "Ctrl"}+Shift+R)`; },
+  get recordingShortcut() { return `${isMac() ? "Meta" : "Control"}+Shift+R`; },
   capMess: "Een rommeltje",
   capTidy: "Opgeruimd",
   stats: {
@@ -35,7 +37,7 @@ export const copy = {
   },
   viewerMeta: (n: number) => `${files(n)} gesorteerd · klik om te openen`,
   close: "Sluiten",
-  reveal: "Toon in Verkenner",
+  get reveal() { return isMac() ? "Toon in Finder" : "Toon in Verkenner"; },
   confirmUndo: (n: number) =>
     `Zet ${files(n)} terug naar waar ze stonden voor de laatste opruimbeurt?`,
   confirmDisorganize:
@@ -55,5 +57,6 @@ export const copy = {
   notAFolder: "Dit is geen map.",
   noDownloads: "Downloads-map niet gevonden",
   rescanFirst: "Scan de map opnieuw.",
+  permissionDenied: "Geen toegang tot deze map. Geef Netjes toegang via Systeeminstellingen > Privacy en beveiliging > Bestanden en mappen en probeer opnieuw.",
   genericError: "Er ging iets mis. Probeer het opnieuw.",
 };

@@ -33,6 +33,7 @@ import {
 } from "./lib/api";
 import { buildAnimModel, chunk, thumbOrder, type AnimModel } from "./lib/animModel";
 import { errorText } from "./lib/errors";
+import { isMac } from "./lib/platform";
 import { runOrganize, type Outcome } from "./lib/sorter";
 
 /** Het resultaat van de laatste gelukte scan, met de hoop die erbij hoort. */
@@ -252,7 +253,7 @@ export default function App() {
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
-      if (e.ctrlKey && e.shiftKey && e.key.toLowerCase() === "r") {
+      if ((isMac() ? e.metaKey && !e.ctrlKey : e.ctrlKey && !e.metaKey) && e.shiftKey && !e.altKey && !e.repeat && e.key.toLowerCase() === "r") {
         e.preventDefault(); // anders herlaadt de webview
         setRecording((on) => !on);
       }

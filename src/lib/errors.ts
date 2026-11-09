@@ -9,6 +9,7 @@ const KNOWN_MESSAGES: ReadonlySet<string> = new Set([
   copy.notAFolder,
   copy.noDownloads,
   copy.rescanFirst,
+  copy.permissionDenied,
 ]);
 
 /** De tekst die de gebruiker te zien krijgt bij een mislukte actie. */
