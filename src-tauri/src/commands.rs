@@ -130,22 +130,33 @@ async fn with_state<T: Send + 'static>(
 /// De ene vorm van een mappad waarmee alles werkt: absoluut, zonder `\\?\`-voorvoegsel en zonder
 /// slotscheidingsteken. De undo-logs zijn op deze tekst gehasht, dus hij moet overal gelijk zijn.
 fn normalize_root(root: &str) -> Result<PathBuf, String> {
-    let absolute = std::path::absolute(root).map_err(|_| NOT_A_FOLDER.to_string())?;
-    let text = absolute.to_string_lossy();
-    let text = if let Some(rest) = text.strip_prefix(r"\\?\UNC\") {
-        format!(r"\\{rest}")
-    } else if let Some(rest) = text.strip_prefix(r"\\?\") {
-        rest.to_string()
-    } else {
-        text.into_owned()
-    };
-    let trimmed = text.trim_end_matches(['\\', '/']);
-    // `C:` zonder scheidingsteken is de huidige map van die schijf; een schijfwortel houdt zijn teken.
-    Ok(if trimmed.ends_with(':') {
-        PathBuf::from(format!(r"{trimmed}\"))
-    } else {
-        PathBuf::from(trimmed)
-    })
+    if root.is_empty() {
+        return Err(NOT_A_FOLDER.to_string());
+    }
+    #[cfg(not(windows))]
+    {
+        // realpath behoudt Unix-padbytes, hoofdletters en de wortel `/`.
+        std::fs::canonicalize(root).map_err(|_| NOT_A_FOLDER.to_string())
+    }
+    #[cfg(windows)]
+    {
+        let absolute = std::path::absolute(root).map_err(|_| NOT_A_FOLDER.to_string())?;
+        let text = absolute.to_string_lossy();
+        let text = if let Some(rest) = text.strip_prefix(r"\\?\UNC\") {
+            format!(r"\\{rest}")
+        } else if let Some(rest) = text.strip_prefix(r"\\?\") {
+            rest.to_string()
+        } else {
+            text.into_owned()
+        };
+        let trimmed = text.trim_end_matches(['\\', '/']);
+        // `C:` zonder scheidingsteken is de huidige map van die schijf; een schijfwortel houdt zijn teken.
+        Ok(if trimmed.ends_with(':') {
+            PathBuf::from(format!(r"{trimmed}\"))
+        } else {
+            PathBuf::from(trimmed)
+        })
+    }
 }
 
 fn root_string(root: &Path) -> String {
@@ -351,7 +362,7 @@ mod tests {
         }
 
         fn root_str(&self) -> String {
-            root_string(self.root())
+            root_string(&normalize_root(&root_string(self.root())).unwrap())
         }
 
         /// Scant en start het opruimen; geeft de gescande root en het plan terug.
@@ -441,10 +452,7 @@ mod tests {
         #[cfg(not(windows))]
         let protected = ["/System", "/"];
         for path in protected {
-        assert_eq!(
-            scan_impl(&fx.state, path).unwrap_err(),
-            FORBIDDEN_ROOT
-        );
+            assert_eq!(scan_impl(&fx.state, path).unwrap_err(), FORBIDDEN_ROOT);
         }
         let file = fx.root().join("b.pdf");
         assert_eq!(
@@ -655,8 +663,15 @@ mod tests {
         fs::create_dir(&actual).unwrap();
         let alias = tmp.path().join("link");
         symlink(&actual, &alias).unwrap();
-        assert_eq!(normalize_root(&format!("{}/", alias.display())).unwrap(), fs::canonicalize(&actual).unwrap());
-        assert!(normalize_root(&actual.to_string_lossy()).unwrap().ends_with("DownloadsUpper"));
+        assert_eq!(
+            normalize_root(&format!("{}/", alias.display())).unwrap(),
+            fs::canonicalize(&actual).unwrap()
+        );
+        assert!(
+            normalize_root(&actual.to_string_lossy())
+                .unwrap()
+                .ends_with("DownloadsUpper")
+        );
     }
 }
 
@@ -666,5 +681,8 @@ pub async fn check_update() -> crate::update::UpdateInfo {
     let current = env!("CARGO_PKG_VERSION");
     tauri::async_runtime::spawn_blocking(move || crate::update::check(current))
         .await
-        .unwrap_or(crate::update::UpdateInfo { state: crate::update::UpdateState::Error, version: None })
+        .unwrap_or(crate::update::UpdateInfo {
+            state: crate::update::UpdateState::Error,
+            version: None,
+        })
 }

@@ -2189,6 +2189,7 @@ dependencies = [
  "blake3",
  "dirs 6.0.0",
  "image",
+ "libc",
  "serde",
  "serde_json",
  "tauri",

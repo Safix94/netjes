@@ -1,6 +1,7 @@
 use std::path::{Path, PathBuf};
 
 /// Standaardlocaties van de systeemmappen, voor als de omgevingsvariabelen ontbreken.
+#[cfg(windows)]
 const DEFAULT_PROTECTED_TREES: &[&str] = &[
     "c:\\windows",
     "c:\\program files",
@@ -8,6 +9,7 @@ const DEFAULT_PROTECTED_TREES: &[&str] = &[
 ];
 
 /// Omgevingsvariabelen die een beschermde mapboom aanwijzen.
+#[cfg(windows)]
 const PROTECTED_TREE_VARS: &[&str] = &[
     "WINDIR",
     "SystemRoot",
@@ -34,7 +36,15 @@ pub fn downloads_dir() -> Option<PathBuf> {
 /// Mappen die Netjes nooit mag opruimen: schijfwortels, `%WINDIR%` en `Program Files`
 /// (met alles eronder) en de gebruikersmap zelf (niet de submappen, zoals Downloads).
 /// Het pad hoeft niet te bestaan; vergelijking is hoofdletterongevoelig.
+#[cfg(windows)]
 pub fn is_forbidden_root(p: &Path) -> bool {
+    // Controleer ook het echte doel van junctions/symlinks, zonder bestaande Windows-hashes te wijzigen.
+    forbidden_windows_path(p)
+        || std::fs::canonicalize(p).is_ok_and(|real| forbidden_windows_path(&real))
+}
+
+#[cfg(windows)]
+fn forbidden_windows_path(p: &Path) -> bool {
     let path = normalize(&p.to_string_lossy());
     if is_drive_root(&path) {
         return true;
@@ -56,6 +66,7 @@ pub fn is_forbidden_root(p: &Path) -> bool {
 }
 
 /// Kleine letters, `\` als scheidingsteken, zonder `\\?\`-voorvoegsel of slotscheidingstekens.
+#[cfg(windows)]
 fn normalize(path: &str) -> String {
     let lower = path.to_lowercase().replace('/', "\\");
     let without_prefix = lower.strip_prefix("\\\\?\\").unwrap_or(&lower);
@@ -63,12 +74,85 @@ fn normalize(path: &str) -> String {
 }
 
 /// `c:` (het genormaliseerde `C:\`): een letter, een dubbele punt en verder niets.
+#[cfg(windows)]
 fn is_drive_root(normalized: &str) -> bool {
     let mut chars = normalized.chars();
     matches!(
         (chars.next(), chars.next(), chars.next()),
         (Some(letter), Some(':'), None) if letter.is_ascii_alphabetic()
     )
+}
+
+#[cfg(target_os = "macos")]
+pub fn is_forbidden_root(path: &Path) -> bool {
+    use std::os::unix::fs::MetadataExt;
+
+    let Ok(absolute) = std::path::absolute(path) else {
+        return true;
+    };
+    // Bestaande voorouders oplossen beschermt ook een nog niet bestaande Library-submap.
+    let real = absolute
+        .ancestors()
+        .find_map(|ancestor| {
+            std::fs::canonicalize(ancestor)
+                .ok()
+                .map(|real| real.join(absolute.strip_prefix(ancestor).unwrap_or(Path::new(""))))
+        })
+        .unwrap_or(absolute);
+    if real.parent().is_none() {
+        return true;
+    }
+    if let (Ok(meta), Some(parent)) = (std::fs::metadata(&real), real.parent()) {
+        if std::fs::metadata(parent).is_ok_and(|parent| meta.dev() != parent.dev()) {
+            return true; // Een mountpoint, ook buiten /Volumes.
+        }
+    }
+    let same_directory = |a: &Path, b: &Path| match (std::fs::metadata(a), std::fs::metadata(b)) {
+        (Ok(a), Ok(b)) => a.dev() == b.dev() && a.ino() == b.ino(),
+        _ => false,
+    };
+    let home = dirs::home_dir();
+    if home
+        .as_ref()
+        .is_some_and(|home| real == *home || same_directory(&real, home))
+    {
+        return true;
+    }
+    let protected = [
+        "/System",
+        "/Library",
+        "/Applications",
+        "/bin",
+        "/sbin",
+        "/usr",
+        "/etc",
+        "/private/etc",
+        "/private/var/db",
+        "/private/var/root",
+        "/private/var/vm",
+        "/private/var/log",
+        "/dev",
+        "/cores",
+        "/opt",
+    ];
+    protected
+        .iter()
+        .map(PathBuf::from)
+        .chain(home.map(|home| home.join("Library")))
+        .any(|tree| {
+            let tree = std::fs::canonicalize(&tree).unwrap_or(tree);
+            // Inode-vergelijking dekt ook afwijkende spelling op een hoofdletterongevoelige schijf.
+            real.starts_with(&tree)
+                || real
+                    .ancestors()
+                    .any(|ancestor| same_directory(ancestor, &tree))
+        })
+        || real == Path::new("/Volumes")
+}
+
+#[cfg(not(any(windows, target_os = "macos")))]
+pub fn is_forbidden_root(_path: &Path) -> bool {
+    true
 }
 
 #[cfg(test)]
@@ -128,7 +212,18 @@ mod tests {
     #[cfg(target_os = "macos")]
     #[test]
     fn mac_protects_system_trees_home_library_and_mount_roots() {
-        for path in ["/", "/System", "/System/Library", "/Library", "/Applications", "/usr/bin", "/private/etc", "/dev", "/Volumes", "/System/Volumes/Data"] {
+        for path in [
+            "/",
+            "/System",
+            "/System/Library",
+            "/Library",
+            "/Applications",
+            "/usr/bin",
+            "/private/etc",
+            "/dev",
+            "/Volumes",
+            "/System/Volumes/Data",
+        ] {
             assert!(is_forbidden_root(Path::new(path)), "{path}");
         }
         let home = dirs::home_dir().unwrap();

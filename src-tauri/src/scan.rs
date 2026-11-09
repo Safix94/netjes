@@ -80,12 +80,11 @@ pub fn scan_directory(root: &Path) -> Result<ScanResult, ScanError> {
         if file_type.is_dir() {
             continue;
         }
-        let attrs = file_attributes(&metadata);
         let Some(name) = entry.file_name().to_str().map(str::to_owned) else {
             skipped += 1;
             continue;
         };
-        if is_skipped_name(&name) || attrs & (FILE_ATTRIBUTE_HIDDEN | FILE_ATTRIBUTE_SYSTEM) != 0 {
+        if !is_processable_file(&entry.path(), &metadata) {
             skipped += 1;
             continue;
         }
@@ -98,7 +97,7 @@ pub fn scan_directory(root: &Path) -> Result<ScanResult, ScanError> {
             modified_ms: modified_ms(&metadata),
             is_duplicate: false,
             duplicate_of: None,
-            placeholder: is_placeholder(attrs),
+            placeholder: false,
         });
     }
 
@@ -126,10 +125,25 @@ pub fn scan_directory(root: &Path) -> Result<ScanResult, ScanError> {
 pub fn is_skipped_name(name: &str) -> bool {
     let lower = name.to_lowercase();
     lower.starts_with('.')
+        || (cfg!(target_os = "macos")
+            && (lower.ends_with(".download") || lower.ends_with(".icloud")))
         || SKIPPED_FILE_NAMES.contains(&lower.as_str())
         || SKIPPED_SUFFIXES
             .iter()
             .any(|suffix| lower.ends_with(suffix))
+}
+
+/// Metadata-controle vóór inhoud lezen, hashen of verplaatsen; volgt nooit een symlink.
+pub(crate) fn is_processable_file(path: &Path, metadata: &fs::Metadata) -> bool {
+    let attrs = file_attributes(metadata);
+    metadata.is_file()
+        && !metadata.is_symlink()
+        && path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .is_some_and(|name| !is_skipped_name(name))
+        && attrs & (FILE_ATTRIBUTE_HIDDEN | FILE_ATTRIBUTE_SYSTEM) == 0
+        && !is_placeholder(attrs)
 }
 
 /// Bestand staat nog in de cloud (OneDrive e.a.) en is niet volledig op deze pc.
@@ -156,7 +170,30 @@ fn file_attributes(metadata: &fs::Metadata) -> u32 {
     metadata.file_attributes()
 }
 
-#[cfg(not(windows))]
+#[cfg(target_os = "macos")]
+fn file_attributes(metadata: &fs::Metadata) -> u32 {
+    use std::os::macos::fs::MetadataExt;
+    mac_file_attributes(metadata.st_flags())
+}
+
+#[cfg(target_os = "macos")]
+fn mac_file_attributes(flags: u32) -> u32 {
+    // SF_DATALESS is een read-only kernelvlag (XNU sys/stat.h), geen instelbare UF-vlag.
+    const SF_DATALESS: u32 = 0x4000_0000;
+    let hidden = if flags & libc::UF_HIDDEN != 0 {
+        FILE_ATTRIBUTE_HIDDEN
+    } else {
+        0
+    };
+    let offline = if flags & SF_DATALESS != 0 {
+        FILE_ATTRIBUTE_OFFLINE
+    } else {
+        0
+    };
+    hidden | offline
+}
+
+#[cfg(not(any(windows, target_os = "macos")))]
 fn file_attributes(_metadata: &fs::Metadata) -> u32 {
     0
 }
@@ -339,15 +376,46 @@ mod tests {
     #[test]
     fn mac_scan_skips_hidden_downloads_cloud_names_and_packages() {
         let dir = tempdir().unwrap();
-        for name in ["local.txt", "hidden.txt", ".env", "file.icloud", "file.download", "file.part"] {
+        for name in [
+            "local.txt",
+            "hidden.txt",
+            ".env",
+            "file.icloud",
+            "file.download",
+            "file.part",
+        ] {
             touch(dir.path(), name);
         }
         fs::create_dir(dir.path().join("App.app")).unwrap();
         touch(&dir.path().join("App.app"), "inside.txt");
-        assert!(std::process::Command::new("chflags").arg("hidden").arg(dir.path().join("hidden.txt")).status().unwrap().success());
+        assert!(
+            std::process::Command::new("chflags")
+                .arg("hidden")
+                .arg(dir.path().join("hidden.txt"))
+                .status()
+                .unwrap()
+                .success()
+        );
         let result = scan_directory(dir.path()).unwrap();
-        assert_eq!(result.files.iter().map(|f| f.name.as_str()).collect::<Vec<_>>(), ["local.txt"]);
+        assert_eq!(
+            result
+                .files
+                .iter()
+                .map(|f| f.name.as_str())
+                .collect::<Vec<_>>(),
+            ["local.txt"]
+        );
         assert_eq!(result.skipped, 5);
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn mac_dataless_flag_is_offline_even_when_not_hidden() {
+        // SF_DATALESS is read-only: an ordinary test file cannot honestly emulate iCloud eviction.
+        assert!(is_placeholder(mac_file_attributes(0x4000_0000)));
+        assert!(is_placeholder(mac_file_attributes(0x4000_8000)));
+        assert!(!is_placeholder(mac_file_attributes(0x0000_8000)));
+        assert!(!is_placeholder(mac_file_attributes(0)));
     }
 
     #[cfg(unix)]
@@ -366,7 +434,14 @@ mod tests {
     fn scan_skips_offline_files_before_processing() {
         let dir = tempdir().unwrap();
         touch(dir.path(), "offline.txt");
-        assert!(std::process::Command::new("attrib").arg("+o").arg(dir.path().join("offline.txt")).status().unwrap().success());
+        assert!(
+            std::process::Command::new("attrib")
+                .arg("+o")
+                .arg(dir.path().join("offline.txt"))
+                .status()
+                .unwrap()
+                .success()
+        );
         let result = scan_directory(dir.path()).unwrap();
         assert!(result.files.is_empty());
         assert_eq!(result.skipped, 1);
