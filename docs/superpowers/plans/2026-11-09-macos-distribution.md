@@ -76,9 +76,9 @@ expect(errorText("Geen toegang tot deze map. Geef Netjes toegang via Systeeminst
 
 **Interfaces:** Consumes: geteste app en Mac-config uit Tasks 1-2. Produces: universele DMG als CI-testartifact en ondertekende/notarized DMG uitsluitend als conceptrelease na expliciete releaseworkflow. Geen wijziging aan de werking van de versiecheck.
 
-- [ ] Voeg op de arm64 Mac-runner een universele build toe, beide Rust-targets en eventueel ad-hoc signing alleen voor het testartifact. Gebruik `pnpm tauri build --target universal-apple-darwin --bundles app,dmg`. Benoem artifact duidelijk `Netjes-macOS-testbuild` en controleer de architecturen met `lipo -archs`. Upload pas na succesvolle build; dit is geen publieke installer.
-- [ ] Maak een handmatig te starten releaseworkflow met minimale rechten en een expliciet ref/tag. Controleer versie/tagconsistentie en vereiste secrets voordat gebouwd wordt. Gebruik Developer ID Application, geen App Store-profiel. Onderteken met hardened runtime; laat Tauri notarization uitvoeren, controleer/staple app en DMG. Bewaar certificaat/API-key alleen in tijdelijke runnerbestanden en ruim die met always op.
-- [ ] Voeg een echte bundle-verificatie toe die faalt bij ontbrekende architectuur, ongeldige handtekening of ontbrekend notarization-ticket. De publieke stap gebruikt onder andere:
+- [x] Voeg op de arm64 Mac-runner een universele build toe, beide Rust-targets en eventueel ad-hoc signing alleen voor het testartifact. Gebruik `pnpm tauri build --target universal-apple-darwin --bundles app,dmg`. Benoem artifact duidelijk `Netjes-macOS-testbuild` en controleer de architecturen met `lipo -archs`. Upload pas na succesvolle build; dit is geen publieke installer.
+- [x] Maak een handmatig te starten releaseworkflow met minimale rechten en een expliciet ref/tag. Controleer versie/tagconsistentie en vereiste secrets voordat gebouwd wordt. Gebruik Developer ID Application, geen App Store-profiel. Onderteken met hardened runtime; laat Tauri notarization uitvoeren, controleer/staple app en DMG. Bewaar certificaat/API-key alleen in tijdelijke runnerbestanden en ruim die met always op.
+- [x] Voeg een echte bundle-verificatie toe die faalt bij ontbrekende architectuur, ongeldige handtekening of ontbrekend notarization-ticket. De publieke stap gebruikt onder andere:
 
 ```sh
 codesign --verify --deep --strict --verbose=2 "$app"
@@ -88,10 +88,10 @@ spctl --assess --type execute --verbose=2 "$app"
 lipo -verify_arch arm64 x86_64 "$app/Contents/MacOS/netjes"
 ```
 
-- [ ] Test de verificateur op de werkelijke CI-app (testmodus controleert structuur/architecturen; distributiemodus moet de niet-genotariseerde build weigeren). Test ontbrekende argumenten/bestanden, zonder de broncode als test te greppen.
-- [ ] Maak hoogstens een draft release met het stabiele asset `Netjes.dmg`, nooit automatisch public/latest. Bestaande Windows-releases/assets mogen niet worden vervangen. De definitieve publicatiestap blijft handmatig na Mac-acceptatie.
-- [ ] Documenteer bouwen, Apple-accountvereisten, benodigde secretNAMEN (geen waarden), releasecommando, downloads, veilige installatie en de checklist voor echte Macs. README maakt onderscheid tussen Windows-download en nog niet vrijgegeven Mac-ondersteuning. Geef precies aan dat de websitebron buiten deze repository staat.
-- [ ] Draai lokale suites en Mac-CI op deze branch. Verifieer de opgeslagen universele DMG, bewaar de run/artifactverwijzingen in het rapport. Laat code review uitvoeren en los concrete findings op. Publieke ondertekening en acceptatie blijven open zolang gebruiker geen account/Mac heeft.
+- [x] Test de verificateur op de werkelijke CI-app (testmodus controleert structuur/architecturen; distributiemodus moet de niet-genotariseerde build weigeren). Test ontbrekende argumenten/bestanden, zonder de broncode als test te greppen.
+- [x] Maak hoogstens een draft release met het stabiele asset `Netjes.dmg`, nooit automatisch public/latest. Bestaande Windows-releases/assets mogen niet worden vervangen. De definitieve publicatiestap blijft handmatig na Mac-acceptatie.
+- [x] Documenteer bouwen, Apple-accountvereisten, benodigde secretNAMEN (geen waarden), releasecommando, downloads, veilige installatie en de checklist voor echte Macs. README maakt onderscheid tussen Windows-download en nog niet vrijgegeven Mac-ondersteuning. Geef precies aan dat de websitebron buiten deze repository staat.
+- [x] Draai lokale suites en Mac-CI op deze branch. Verifieer de opgeslagen universele DMG, bewaar de run/artifactverwijzingen in het rapport. Laat code review uitvoeren en los concrete findings op. Publieke ondertekening en acceptatie blijven open zolang gebruiker geen account/Mac heeft.
 
 ## Externe vrijgavevoorwaarden
 
