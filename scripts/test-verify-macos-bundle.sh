@@ -32,15 +32,7 @@ codesign --force --deep --sign - "$scratch/Netjes.app"
 expect_failure 'universal' --test "$scratch/Netjes.app" "$dmg"
 rm -rf "$scratch/Netjes.app"
 ditto "$app" "$scratch/Netjes.app"
-python3 - "$scratch/Netjes.app/Contents/MacOS/netjes" <<'PY'
-import sys
-with open(sys.argv[1], 'r+b') as f:
-    f.seek(16384)
-    byte = f.read(1)
-    assert byte
-    f.seek(16384)
-    f.write(bytes([byte[0] ^ 1]))
-PY
+printf 'tampered signed resources\n' > "$scratch/Netjes.app/Contents/Resources/verification-fixture.txt"
 expect_failure 'signature' --test "$scratch/Netjes.app" "$dmg"
 rm -rf "$scratch/Netjes.app"
 ditto "$app" "$scratch/Netjes.app"
