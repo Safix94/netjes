@@ -324,6 +324,22 @@ mod tests {
     use std::time::{Duration, SystemTime};
     use tempfile::{TempDir, tempdir};
 
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn mac_canonicalization_permission_denial_has_recovery_instead_of_not_a_folder() {
+        use std::os::unix::fs::PermissionsExt;
+        let tmp = tempdir().unwrap();
+        let parent = tmp.path().join("afgesloten");
+        let child = parent.join("Downloads");
+        fs::create_dir_all(&child).unwrap();
+        fs::set_permissions(&parent, fs::Permissions::from_mode(0o000)).unwrap();
+        let normalized = normalize_root(&child.to_string_lossy());
+        let scanned = scan_impl(&AppState::default(), &child.to_string_lossy());
+        fs::set_permissions(&parent, fs::Permissions::from_mode(0o700)).unwrap();
+        assert!(normalized.unwrap_err().contains("Systeeminstellingen"));
+        assert!(scanned.unwrap_err().contains("Systeeminstellingen"));
+    }
+
     struct Fixture {
         root_dir: TempDir,
         _logs: TempDir,

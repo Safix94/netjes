@@ -203,6 +203,16 @@ mod tests {
     use super::*;
     use tempfile::tempdir;
 
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn mac_permission_errors_explain_how_to_restore_folder_access() {
+        for code in [libc::EPERM, libc::EACCES] {
+            let message = io_error(std::io::Error::from_raw_os_error(code)).to_string();
+            assert!(message.contains("Systeeminstellingen"), "{message}");
+            assert!(!message.contains("schijftoegang"));
+        }
+    }
+
     fn touch(dir: &Path, name: &str) {
         fs::write(dir.join(name), b"x").unwrap();
     }

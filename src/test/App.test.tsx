@@ -1,3 +1,4 @@
+import "./canvas-mock";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { useEffect } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -85,6 +86,7 @@ function mockMoves(failing: string[] = []) {
 }
 
 beforeEach(() => {
+  vi.spyOn(window.navigator, "platform", "get").mockReturnValue("Win32");
   vi.mocked(api.getCategories).mockResolvedValue(CATEGORIES);
   vi.mocked(api.getDownloadsDir).mockResolvedValue(ROOT);
   vi.mocked(api.scan).mockImplementation(async (root) => scanned(root, "fotos", "fotos", "videos", "duplicaten"));
@@ -97,9 +99,37 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   vi.resetAllMocks();
+  vi.restoreAllMocks();
 });
 
 describe("App", () => {
+  it("uses Command on Mac, announces the shortcut and reveals folders in Finder", async () => {
+    vi.spyOn(window.navigator, "platform", "get").mockReturnValue("MacIntel");
+    vi.mocked(api.listFolderFiles).mockResolvedValue([file("fotos")]);
+    render(<App />);
+    await screen.findByText(copy.statusReady(4));
+    expect(button(copy.recording)).toHaveAttribute("aria-keyshortcuts", "Meta+Shift+R");
+    expect(button(copy.recording)).toHaveAttribute("title", expect.stringContaining("Cmd+Shift+R"));
+    fireEvent.keyDown(window, { key: "R", ctrlKey: true, shiftKey: true });
+    expect(screen.queryByText(copy.disorganize)).not.toBeInTheDocument();
+    fireEvent.keyDown(window, { key: "R", metaKey: true, shiftKey: true });
+    expect(await screen.findByText(copy.disorganize)).toBeInTheDocument();
+    fireEvent.click(document.querySelector('[data-cat="fotos"]')!);
+    fireEvent.click(await screen.findByRole("button", { name: "Toon in Finder" }));
+    expect(api.revealInExplorer).toHaveBeenCalled();
+  });
+
+  it("keeps the permission recovery message and lets the user retry by choosing a folder", async () => {
+    const denied = "Geen toegang tot deze map. Geef Netjes toegang via Systeeminstellingen > Privacy en beveiliging > Bestanden en mappen en probeer opnieuw.";
+    vi.mocked(api.getDownloadsDir).mockRejectedValueOnce(denied);
+    vi.mocked(api.chooseFolder).mockResolvedValue(ROOT);
+    render(<App />);
+    expect(await screen.findByText(denied)).toBeInTheDocument();
+    expect(button(copy.chooseFolder)).toBeEnabled();
+    fireEvent.click(button(copy.chooseFolder));
+    expect(await screen.findByText(copy.statusReady(4))).toBeInTheDocument();
+    expect(screen.queryByText(denied)).not.toBeInTheDocument();
+  });
   it("scans the Downloads folder on start and shows the real numbers", async () => {
     render(<App />);
     expect(await screen.findByText(copy.statusReady(4))).toBeInTheDocument();
@@ -189,6 +219,9 @@ describe("App", () => {
   it("toggles recording mode with Ctrl+Shift+R and with the Opname button", async () => {
     render(<App />);
     await screen.findByText(copy.statusReady(4));
+    expect(screen.queryByText(copy.disorganize)).not.toBeInTheDocument();
+    expect(button(copy.recording)).toHaveAttribute("aria-keyshortcuts", "Control+Shift+R");
+    fireEvent.keyDown(window, { key: "R", metaKey: true, shiftKey: true });
     expect(screen.queryByText(copy.disorganize)).not.toBeInTheDocument();
     fireEvent.keyDown(window, { key: "R", ctrlKey: true, shiftKey: true });
     expect(await screen.findByText(copy.disorganize)).toBeInTheDocument();

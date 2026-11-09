@@ -257,7 +257,7 @@ mod shell {
     }
 }
 
-#[cfg(all(test, windows))]
+#[cfg(all(test, any(windows, target_os = "macos")))]
 mod tests {
     use super::*;
     use image::{ImageFormat, Rgba, RgbaImage};
@@ -314,6 +314,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(windows)]
     fn bgra_becomes_rgba_and_alpha_less_bitmaps_become_opaque() {
         let mut with_alpha = [10, 20, 30, 128, 1, 2, 3, 0];
         shell::bgra_to_rgba(&mut with_alpha);
@@ -325,6 +326,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(windows)]
     fn file_without_thumbnail_handler_returns_none() {
         let src = tempdir().unwrap();
         let cache = tempdir().unwrap();
@@ -378,5 +380,37 @@ mod tests {
         assert_eq!(result[1], None);
         assert!(result[2].as_deref().is_some_and(|p| Path::new(p).is_file()));
         assert_ne!(result[0], result[2]);
+    }
+
+    #[test]
+    fn invalid_size_cannot_use_an_existing_cache_entry() {
+        let src = tempdir().unwrap();
+        let cache = tempdir().unwrap();
+        let png = src.path().join("rood.png");
+        write_png(&png);
+        let metadata = fs::metadata(&png).unwrap();
+        for px in [0, 1025, u32::MAX] {
+            let key = thumb_cache_key(&png, metadata.len(), modified_ms(&metadata), px);
+            write_png(&cache.path().join(format!("{key}.png")));
+            assert_eq!(get_thumbnail_in(cache.path(), &png, px), None);
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn mac_unknown_type_and_symlink_keep_the_file_tile_even_with_cached_image() {
+        let src = tempdir().unwrap();
+        let cache = tempdir().unwrap();
+        let unknown = src.path().join("bestand.netjes-unknown-type");
+        fs::write(&unknown, b"geen afbeelding").unwrap();
+        assert_eq!(get_thumbnail_in(cache.path(), &unknown, 96), None);
+        let png = src.path().join("rood.png");
+        write_png(&png);
+        let link = src.path().join("link.png");
+        std::os::unix::fs::symlink(&png, &link).unwrap();
+        let metadata = fs::metadata(&link).unwrap();
+        let key = thumb_cache_key(&link, metadata.len(), modified_ms(&metadata), 96);
+        write_png(&cache.path().join(format!("{key}.png")));
+        assert_eq!(get_thumbnail_in(cache.path(), &link, 96), None);
     }
 }
