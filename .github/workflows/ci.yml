@@ -30,6 +30,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: src-tauri
+          cache-on-failure: true
       - run: pnpm install --frozen-lockfile
       - run: pnpm test
       - run: pnpm build
@@ -56,7 +57,7 @@ jobs:
             arch="${pair##*:}"
             found=false
             while IFS= read -r archive; do
-              lipo -verify_arch "$arch" "$archive"
+              lipo "$archive" -verify_arch "$arch"
               nm -gU "$archive" | grep '_netjes_macos_thumbnail$'
               nm -gU "$archive" | grep '_netjes_macos_thumbnail_free$'
               echo "Verified static bridge $arch: $archive"

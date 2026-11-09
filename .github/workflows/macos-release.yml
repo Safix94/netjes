@@ -91,6 +91,13 @@ jobs:
           unset APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD APPLE_API_PRIVATE_KEY
           pnpm tauri build --target universal-apple-darwin --bundles app,dmg --config '{"bundle":{"macOS":{"hardenedRuntime":true}}}'
           bundle=src-tauri/target/universal-apple-darwin/release/bundle
+          python3 - "$bundle/macos/Netjes.app/Contents/Info.plist" <<'PY'
+          import os, plistlib, sys
+          with open(sys.argv[1], 'rb') as f:
+              info = plistlib.load(f)
+          version = os.environ['RELEASE_TAG'][1:]
+          assert info['CFBundleShortVersionString'] == info['CFBundleVersion'] == version, 'Built app version does not match release tag'
+          PY
           xcrun stapler staple "$bundle/macos/Netjes.app"
           images=("$bundle"/dmg/*.dmg)
           test "${#images[@]}" = 1

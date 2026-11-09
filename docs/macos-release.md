@@ -89,7 +89,7 @@ Op een geschikte Mac kan de strikte controle opnieuw met een niet-geheime team-I
 ```sh
 APPLE_TEAM_ID=ABCDEFGHIJ bash scripts/verify-macos-bundle.sh --distribution Netjes.app Netjes.dmg
 codesign --verify --deep --strict --all-architectures --verbose=2 Netjes.app
-lipo -verify_arch arm64 x86_64 Netjes.app/Contents/MacOS/netjes
+lipo Netjes.app/Contents/MacOS/netjes -verify_arch arm64 x86_64
 xcrun stapler validate Netjes.app
 xcrun stapler validate Netjes.dmg
 spctl --assess --type execute --verbose=2 Netjes.app

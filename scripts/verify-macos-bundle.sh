@@ -14,7 +14,7 @@ dmg="$(cd "$(dirname "$dmg")" && pwd)/$(basename "$dmg")"
 verify_app() {
   local bundle="$1" binary="$1/Contents/MacOS/netjes" arch details
   [[ -x "$binary" && ! -L "$binary" ]] || fail 'Missing netjes executable'
-  lipo -verify_arch arm64 x86_64 "$binary" || fail 'Executable must be universal (arm64 and x86_64)'
+  lipo "$binary" -verify_arch arm64 x86_64 || fail 'Executable must be universal (arm64 and x86_64)'
   echo "Architectures: $(lipo -archs "$binary")"
   python3 - "$bundle/Contents/Info.plist" <<'PY'
 import plistlib, sys
