@@ -4,6 +4,9 @@ on:
   push:
   pull_request:
 
+permissions:
+  contents: read
+
 jobs:
   test:
     strategy:
@@ -14,9 +17,9 @@ jobs:
     env:
       MACOSX_DEPLOYMENT_TARGET: '13.0'
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: pnpm/action-setup@f53f5227a9e83886ab598c617f3c170fab62f0d3 # v6.1.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
           cache: pnpm
@@ -29,5 +32,69 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm test
       - run: pnpm build
+      - run: python scripts/test-macos-release.py
+      - name: Verify bundle argument failures
+        shell: bash
+        run: bash scripts/test-verify-macos-bundle.sh
       - run: cargo test --manifest-path src-tauri/Cargo.toml
       - run: cargo clippy --manifest-path src-tauri/Cargo.toml -- -D warnings
+
+  macos-testbuild:
+    name: Universal macOS testbuild (not for distribution)
+    runs-on: macos-15
+    env:
+      MACOSX_DEPLOYMENT_TARGET: '13.0'
+      APPLE_SIGNING_IDENTITY: '-'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: pnpm/action-setup@f53f5227a9e83886ab598c617f3c170fab62f0d3 # v6.1.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: pnpm
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+          key: universal-testbuild
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm tauri build --target universal-apple-darwin --bundles app,dmg
+      - name: Check per-architecture static Quick Look bridge
+        shell: bash
+        run: |
+          set -euo pipefail
+          for pair in aarch64:arm64 x86_64:x86_64; do
+            target="${pair%%:*}"
+            arch="${pair##*:}"
+            found=false
+            while IFS= read -r archive; do
+              lipo -verify_arch "$arch" "$archive"
+              nm -gU "$archive" | grep '_netjes_macos_thumbnail$'
+              nm -gU "$archive" | grep '_netjes_macos_thumbnail_free$'
+              echo "Verified static bridge $arch: $archive"
+              found=true
+            done < <(find "src-tauri/target/${target}-apple-darwin/release/build" -name libnetjes_macos_thumbnails.a)
+            test "$found" = true
+          done
+      - name: Verify actual DMG and rejection cases
+        shell: bash
+        run: |
+          set -euo pipefail
+          bundle=src-tauri/target/universal-apple-darwin/release/bundle
+          images=("$bundle"/dmg/*.dmg)
+          test "${#images[@]}" = 1
+          mkdir -p artifacts/macos-testbuild
+          bash scripts/test-verify-macos-bundle.sh "$bundle/macos/Netjes.app" "${images[0]}" 2>&1 | tee artifacts/macos-testbuild/verification.txt
+          cp "${images[0]}" artifacts/macos-testbuild/Netjes-testbuild.dmg
+          ditto -c -k --sequesterRsrc --keepParent "$bundle/macos/Netjes.app" artifacts/macos-testbuild/Netjes.app.zip
+          printf 'TEST ONLY: ad-hoc signed, not notarized, not a public installer.\nSource: %s\n' "$GITHUB_SHA" > artifacts/macos-testbuild/TESTBUILD.txt
+          cd artifacts/macos-testbuild
+          shasum -a 256 Netjes-testbuild.dmg Netjes.app.zip > SHA256SUMS
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: Netjes-macOS-testbuild
+          path: artifacts/macos-testbuild/
+          if-no-files-found: error
+          retention-days: 30

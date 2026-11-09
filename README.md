@@ -12,6 +12,12 @@ Meer uitleg volgt op agentiek.be.
 
 Download rechtstreeks: https://github.com/Safix94/netjes/releases/latest/download/Netjes-Setup.exe. Die link geeft altijd de nieuwste versie. Het bestand heet `Netjes-Setup.exe` en werkt op Windows 10 en 11 (64 bit). Versie 1.0 installeert geen updates zelf: de knop "Controleren op updates" in de kop vergelijkt met de nieuwste release en linkt naar de downloadpagina. Geen telemetrie.
 
+## macOS in voorbereiding
+
+De Mac-versie is nog niet publiek vrijgegeven. CI bouwt een universele testbuild voor Apple Silicon en Intel met bouwdoel macOS 13.0. Het artifact `Netjes-macOS-testbuild` op [GitHub Actions](https://github.com/Safix94/netjes/actions/workflows/ci.yml) is ad-hoc ondertekend en niet genotariseerd: het is geen publieke installer.
+
+[Bouw- en releasehandleiding](docs/macos-release.md) bevat de commando's, verificatie en acceptatiechecklist. Publieke distributie wacht op een Apple Developer-account, Developer ID-ondertekening, notarization en tests op echte Macs, inclusief macOS 13. De voorbereide releaseworkflow maakt uitsluitend een conceptrelease. De websitebron voor agentiek.be staat buiten deze repository; een Mac-downloadknop is een latere vrijgavestap.
+
 ## Windows-waarschuwing
 
 Windows SmartScreen kan een waarschuwing tonen omdat het installatiebestand nog niet ondertekend is: klik op "Meer informatie" en daarna op "Toch uitvoeren". Houdt je browser de download tegen, kies dan "Behouden".

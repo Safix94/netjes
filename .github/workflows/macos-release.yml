@@ -1,0 +1,143 @@
+name: macOS signed draft (manual only)
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Existing tag vMAJOR.MINOR.PATCH; must have no existing release'
+        required: true
+        type: string
+      source_sha:
+        description: 'Exact 40-character commit SHA pointed to by the tag'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: macos-signed-draft
+  cancel-in-progress: false
+
+jobs:
+  draft:
+    runs-on: macos-15
+    environment: macos-release
+    permissions:
+      contents: write
+    env:
+      MACOSX_DEPLOYMENT_TARGET: '13.0'
+      RELEASE_TAG: ${{ inputs.tag }}
+      SOURCE_SHA: ${{ inputs.source_sha }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.source_sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Fail closed on ref, versions, existing releases or missing credentials
+        env:
+          GH_TOKEN: ${{ github.token }}
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          APPLE_API_PRIVATE_KEY: ${{ secrets.APPLE_API_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          gh api --paginate --slurp "repos/$GITHUB_REPOSITORY/releases" > "$RUNNER_TEMP/netjes-releases.json"
+          python3 scripts/check-macos-release.py "$RUNNER_TEMP/netjes-releases.json"
+      - uses: pnpm/action-setup@f53f5227a9e83886ab598c617f3c170fab62f0d3 # v6.1.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          package-manager-cache: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+      - run: pnpm install --frozen-lockfile
+      - name: Sign, notarize, staple and verify universal app and DMG
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          APPLE_API_PRIVATE_KEY: ${{ secrets.APPLE_API_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          umask 077
+          credentials="$RUNNER_TEMP/netjes-signing"
+          mkdir "$credentials"
+          # Save the search list so cleanup restores it even on failure/cancellation.
+          security list-keychains -d user > "$credentials/keychains.txt"
+          printf '%s' "$APPLE_CERTIFICATE" | base64 --decode > "$credentials/certificate.p12"
+          printf '%s' "$APPLE_API_PRIVATE_KEY" > "$credentials/AuthKey.p8"
+          export APPLE_API_KEY_PATH="$credentials/AuthKey.p8"
+          keychain="$credentials/signing.keychain-db"
+          keychain_password=$(openssl rand -hex 32)
+          echo "::add-mask::$keychain_password"
+          security create-keychain -p "$keychain_password" "$keychain"
+          security set-keychain-settings -lut 21600 "$keychain"
+          security unlock-keychain -p "$keychain_password" "$keychain"
+          security import "$credentials/certificate.p12" -k "$keychain" -P "$APPLE_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$keychain_password" "$keychain" >/dev/null
+          security list-keychains -d user -s "$keychain"
+          security find-identity -v -p codesigning "$keychain" | grep -F -- "\"$APPLE_SIGNING_IDENTITY\""
+          # Use our explicit temporary keychain; prevent Tauri importing a second one.
+          unset APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD APPLE_API_PRIVATE_KEY
+          pnpm tauri build --target universal-apple-darwin --bundles app,dmg --config '{"bundle":{"macOS":{"hardenedRuntime":true}}}'
+          bundle=src-tauri/target/universal-apple-darwin/release/bundle
+          xcrun stapler staple "$bundle/macos/Netjes.app"
+          images=("$bundle"/dmg/*.dmg)
+          test "${#images[@]}" = 1
+          # Tauri notarizes the app. Submit and staple the final signed DMG explicitly.
+          codesign --force --timestamp --sign "$APPLE_SIGNING_IDENTITY" "${images[0]}"
+          xcrun notarytool submit "${images[0]}" --key "$APPLE_API_KEY_PATH" --key-id "$APPLE_API_KEY" --issuer "$APPLE_API_ISSUER" --wait
+          xcrun stapler staple "${images[0]}"
+          bash scripts/verify-macos-bundle.sh --distribution "$bundle/macos/Netjes.app" "${images[0]}"
+          mkdir -p artifacts/macos-release
+          cp "${images[0]}" artifacts/macos-release/Netjes.dmg
+          # Verify the exact stable asset as well, before granting it release status.
+          bash scripts/verify-macos-bundle.sh --distribution "$bundle/macos/Netjes.app" artifacts/macos-release/Netjes.dmg
+      - name: Always remove temporary signing material
+        if: ${{ always() }}
+        run: |
+          set -euo pipefail
+          credentials="$RUNNER_TEMP/netjes-signing"
+          status=0
+          if [[ -f "$credentials/keychains.txt" ]]; then
+            python3 - "$credentials/keychains.txt" <<'PY' || status=$?
+          import pathlib, shlex, subprocess, sys
+          paths = shlex.split(pathlib.Path(sys.argv[1]).read_text())
+          subprocess.run(['security', 'list-keychains', '-d', 'user', '-s', *paths], check=True)
+          PY
+          # Cleanup must continue even if restoring the search list fails.
+          fi
+          if [[ -f "$credentials/signing.keychain-db" ]]; then
+            security delete-keychain "$credentials/signing.keychain-db" || status=$?
+          fi
+          rm -rf "$credentials"
+          exit "$status"
+      - name: Create a new draft only; never upload to an existing release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          # Re-check after building; gh release create also fails if a release raced us.
+          gh api --paginate --slurp "repos/$GITHUB_REPOSITORY/releases" > "$RUNNER_TEMP/netjes-releases.json"
+          python3 - "$RUNNER_TEMP/netjes-releases.json" <<'PY'
+          import json, os, sys
+          pages = json.load(open(sys.argv[1]))
+          assert not any(r['tag_name'] == os.environ['RELEASE_TAG'] for page in pages for r in page), 'Release already exists; refusing mutation'
+          PY
+          test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+          test "$(git rev-parse --verify "refs/tags/$RELEASE_TAG^{commit}")" = "$SOURCE_SHA"
+          test "$(gh api "repos/$GITHUB_REPOSITORY/commits/$RELEASE_TAG" --jq .sha)" = "$SOURCE_SHA"
+          gh release create "$RELEASE_TAG" artifacts/macos-release/Netjes.dmg \
+            --draft --latest=false --verify-tag --target "$SOURCE_SHA" \
+            --title "Netjes $RELEASE_TAG — macOS acceptance draft" \
+            --notes 'Signed and notarized universal macOS candidate. Keep draft until real Mac acceptance is complete. Windows assets and website are managed separately.'
