@@ -792,7 +792,7 @@ mod tests {
         let outside = tempdir().unwrap();
         let (src, dest) = organize_one_photo(logs.path(), root.path());
         fs::remove_file(&dest).unwrap();
-        let real = outside.path().join("real.jpg");
+        let real = outside.path().join("a.jpg");
         fs::write(&real, b"veilig").unwrap();
         symlink(&real, &dest).unwrap();
         let result = restore_in(logs.path(), root.path(), false).unwrap();
@@ -805,6 +805,15 @@ mod tests {
         symlink(outside.path(), dest.parent().unwrap()).unwrap();
         let result = restore_in(logs.path(), root.path(), false).unwrap();
         assert_eq!(result.restored, 0);
+        assert_eq!(result.errors.len(), 1);
+        assert_eq!(result.errors[0].error.as_deref(), Some(OUTSIDE));
+        assert!(!src.exists());
+        assert!(
+            fs::symlink_metadata(dest.parent().unwrap())
+                .unwrap()
+                .is_symlink()
+        );
+        assert_eq!(fs::read(&dest).unwrap(), b"veilig");
         assert_eq!(fs::read(real).unwrap(), b"veilig");
     }
 }

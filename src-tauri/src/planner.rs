@@ -2,7 +2,7 @@ use crate::categories::{self, Category};
 use crate::scan::FileEntry;
 use serde::{Deserialize, Serialize};
 use std::fs;
-use std::io::ErrorKind;
+use std::io::{self, ErrorKind};
 use std::path::{Path, PathBuf};
 
 /// Eén geplande verplaatsing: `dest` is `root/<categoriemap>/<naam>`, nog zonder conflictoplossing.
@@ -35,18 +35,24 @@ pub fn plan_moves(root: &Path, files: &[FileEntry]) -> Vec<PlannedMove> {
 /// Geeft `dest` terug als daar niets staat. Anders " (2)", " (3)", ... vóór de extensie:
 /// `versie 1.2 final.pdf` wordt `versie 1.2 final (2).pdf`, `archief.tar.gz` wordt
 /// `archief (2).tar.gz` en een naam zonder extensie krijgt de teller achteraan.
-pub fn unique_dest(dest: &Path) -> PathBuf {
-    if is_free(dest) {
-        return dest.to_path_buf();
+pub fn unique_dest(dest: &Path) -> io::Result<PathBuf> {
+    if is_free(dest)? {
+        return Ok(dest.to_path_buf());
     }
     let Some(name) = dest.file_name().map(|n| n.to_string_lossy()) else {
-        return dest.to_path_buf();
+        return Ok(dest.to_path_buf());
     };
     let (stem, extension) = split_extension(&name);
-    (2u32..)
-        .map(|n| dest.with_file_name(format!("{stem} ({n}){extension}")))
-        .find(|candidate| is_free(candidate))
-        .unwrap_or_else(|| dest.to_path_buf())
+    for n in 2..=u32::MAX {
+        let candidate = dest.with_file_name(format!("{stem} ({n}){extension}"));
+        if is_free(&candidate)? {
+            return Ok(candidate);
+        }
+    }
+    Err(io::Error::new(
+        ErrorKind::AlreadyExists,
+        "Geen vrije bestandsnaam gevonden",
+    ))
 }
 
 /// Splitst een bestandsnaam in stam en extensie (met de punt). De extensie begint bij de laatste
@@ -75,9 +81,13 @@ fn split_extension(name: &str) -> (&str, &str) {
     name.split_at(split)
 }
 
-/// Vrij is enkel wat zeker niet bestaat. Een dode symlink of een onleesbare plek telt als bezet.
-fn is_free(path: &Path) -> bool {
-    matches!(fs::symlink_metadata(path), Err(e) if e.kind() == ErrorKind::NotFound)
+/// Alleen NotFound is vrij; ook een dode symlink is bezet. Andere fouten stoppen de zoekactie.
+fn is_free(path: &Path) -> io::Result<bool> {
+    match fs::symlink_metadata(path) {
+        Ok(_) => Ok(false),
+        Err(e) if e.kind() == ErrorKind::NotFound => Ok(true),
+        Err(e) => Err(e),
+    }
 }
 
 #[cfg(test)]
@@ -104,7 +114,7 @@ mod tests {
         let dir = tempdir().unwrap();
         fs::write(dir.path().join("x.tar.gz"), b"1").unwrap();
         fs::write(dir.path().join("x (2).tar.gz"), b"2").unwrap();
-        let unique = unique_dest(&dir.path().join("x.tar.gz"));
+        let unique = unique_dest(&dir.path().join("x.tar.gz")).unwrap();
         assert_eq!(unique, dir.path().join("x (3).tar.gz"));
     }
 
@@ -112,7 +122,51 @@ mod tests {
     fn unique_dest_returns_dest_itself_when_free() {
         let dir = tempdir().unwrap();
         let dest = dir.path().join("vrij.pdf");
-        assert_eq!(unique_dest(&dest), dest);
+        assert_eq!(unique_dest(&dest).unwrap(), dest);
+    }
+
+    #[test]
+    fn unique_dest_reports_noncollision_lookup_errors_promptly() {
+        let dir = tempdir().unwrap();
+        let dest = dir.path().join("invalid\0.jpg");
+        assert_eq!(
+            fs::symlink_metadata(&dest).unwrap_err().kind(),
+            ErrorKind::InvalidInput
+        );
+        let (sender, receiver) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let result = unique_dest(&dest);
+            let _ = sender.send(result);
+        });
+
+        let error = receiver
+            .recv_timeout(std::time::Duration::from_secs(2))
+            .expect("a non-collision lookup error must return promptly")
+            .unwrap_err();
+        assert_eq!(error.kind(), ErrorKind::InvalidInput);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn unique_dest_reports_regular_file_parent_error_promptly() {
+        let dir = tempdir().unwrap();
+        let parent = dir.path().join("category");
+        fs::write(&parent, b"replaced").unwrap();
+        let dest = parent.join("a.jpg");
+        let expected = fs::symlink_metadata(&dest).unwrap_err();
+        assert_eq!(expected.kind(), ErrorKind::NotADirectory);
+        let (sender, receiver) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let _ = sender.send(unique_dest(&dest));
+        });
+
+        let error = receiver
+            .recv_timeout(std::time::Duration::from_secs(2))
+            .expect("a regular-file parent must fail promptly")
+            .unwrap_err();
+        assert_eq!(error.kind(), ErrorKind::NotADirectory);
+        assert_eq!(error.raw_os_error(), expected.raw_os_error());
+        assert_eq!(fs::read(parent).unwrap(), b"replaced");
     }
 
     #[test]
@@ -120,7 +174,7 @@ mod tests {
         let dir = tempdir().unwrap();
         fs::write(dir.path().join("README"), b"1").unwrap();
         assert_eq!(
-            unique_dest(&dir.path().join("README")),
+            unique_dest(&dir.path().join("README")).unwrap(),
             dir.path().join("README (2)")
         );
     }
@@ -128,7 +182,7 @@ mod tests {
     fn counted(existing: &str) -> PathBuf {
         let dir = tempdir().unwrap();
         fs::write(dir.path().join(existing), b"1").unwrap();
-        let unique = unique_dest(&dir.path().join(existing));
+        let unique = unique_dest(&dir.path().join(existing)).unwrap();
         unique.strip_prefix(dir.path()).unwrap().to_path_buf()
     }
 

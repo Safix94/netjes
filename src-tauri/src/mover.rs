@@ -162,7 +162,7 @@ pub fn move_path_no_replace(src: &Path, dest: &Path) -> io::Result<PathBuf> {
         }
     }
     for _ in 0..MAX_ATTEMPTS {
-        let candidate = unique_dest(dest);
+        let candidate = unique_dest(dest)?;
         match rename_no_replace(src, &candidate) {
             Ok(()) => return Ok(candidate),
             Err(e) if e.kind() == ErrorKind::AlreadyExists => continue,
@@ -176,10 +176,8 @@ fn try_move(m: &PlannedMove) -> Result<PathBuf, String> {
     let src = Path::new(&m.src);
     let dest = Path::new(&m.dest);
     let dest_dir = dest.parent().ok_or(INVALID_DEST)?;
-    if fs::symlink_metadata(dest_dir)
-        .map_err(|e| e.to_string())?
-        .is_symlink()
-    {
+    let metadata = fs::symlink_metadata(dest_dir).map_err(|e| e.to_string())?;
+    if metadata.is_symlink() || !metadata.is_dir() {
         return Err(INVALID_DEST.to_string());
     }
     let root =
@@ -386,6 +384,32 @@ mod tests {
         assert!(!outcome.ok);
         assert!(outcome.error.is_some());
         assert!(src.exists());
+    }
+
+    #[test]
+    fn move_refuses_category_replaced_with_file_promptly_and_preserves_source() {
+        let root = tempdir().unwrap();
+        let src = root.path().join("a.jpg");
+        fs::write(&src, b"foto").unwrap();
+        let m = planned(2, &src, root.path(), "a.jpg", Category::Fotos);
+        ensure_folders(root.path(), &[Category::Fotos]).unwrap();
+        let category = root.path().join("Foto's");
+        fs::remove_dir(&category).unwrap();
+        fs::write(&category, b"vervangen").unwrap();
+
+        let (sender, receiver) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let _ = sender.send(move_one(&m));
+        });
+        let outcome = receiver
+            .recv_timeout(std::time::Duration::from_secs(2))
+            .expect("a non-directory destination must fail promptly");
+
+        assert!(!outcome.ok);
+        assert_eq!(outcome.dest, None);
+        assert_eq!(outcome.error.as_deref(), Some(INVALID_DEST));
+        assert_eq!(fs::read(&src).unwrap(), b"foto");
+        assert_eq!(fs::read(&category).unwrap(), b"vervangen");
     }
 
     #[test]
