@@ -56,19 +56,19 @@ assert_eq!(std::fs::read(&dst).unwrap(), b"oud");
 
 **Interfaces:** Bestaande `get_thumbnails(paths, px)` blijft een geordende lijst cachepaden/null geven. Task 1 levert een veilige scan. De native bridge is uitsluitend een interne thumbnailfunctie; mislukking geeft None en mag de opruimactie nooit blokkeren. UI-platformherkenning wordt centraal afgeleid, met veilige Windows-/browserfallback.
 
-- [ ] Voeg tests toe voor echte PNG-miniaturen/cache op Mac, ongeldige invoer en fallback; voor Cmd+Shift+R op Mac en Ctrl+Shift+R op Windows; voor begrijpelijke toestemmingweigering.
+- [x] Voeg tests toe voor echte PNG-miniaturen/cache op Mac, ongeldige invoer en fallback; voor Cmd+Shift+R op Mac en Ctrl+Shift+R op Windows; voor begrijpelijke toestemmingweigering.
 
 ```typescript
 expect(errorText("Geen toegang tot deze map. Geef Netjes toegang via Systeeminstellingen > Privacy en beveiliging > Bestanden en mappen en probeer opnieuw."))
   .toContain("Systeeminstellingen");
 ```
 
-- [ ] Draai de relevante tests voor de wijziging en leg het ontbrekende gedrag vast. Gebruik voor native tests de Mac-CI uit Task 1.
-- [ ] Voeg Quick Look-thumbnailgeneratie toe. Voorkeur: kleine Objective-C bridge via `cc` in build.rs, gelinkt aan Foundation/AppKit/QuickLookThumbnailing en gecompileerd met ARC, zonder los uitvoerbaar hulpmiddel. Rust behoudt de bestaande PNG-cache. Begrens aanvraagwachttijd; behandel timeout, callback-lifetime, geheugenownership en foutpaden veilig. Gebruik geen shellinterpolatie of netwerk.
-- [ ] Laat miniaturen alleen gewone lokale bestanden lezen en behoud de bestaande bestandstegel bij onbekende typen. Test PNG-inhoud en cachehergebruik, geen assertion op alleen het bestaan van een mock.
-- [ ] Voeg Nederlandse Downloads/Desktop/Documents-gebruiksbeschrijvingen toe waar vereist. Vertaal permission denied/operation not permitted naar stabiele, begrijpelijke fouttekst en behoud die door de UI-errorfilter. Geef de gebruiker een herstelroute met opnieuw proberen/map kiezen; vraag geen volledige schijftoegang.
-- [ ] Gebruik Finder-tekst en Command-toets op Mac, behoud Windows-tekst en Ctrl. Gebruik de bestaande Tauri opener/dialog. Maak venster en raster bruikbaar op kleinere MacBook-schermen met beperkte CSS/configwijzigingen; geen herontwerp of componentmigratie.
-- [ ] Draai gerichte UI-tests, daarna `pnpm test`, `pnpm build`, Rust-tests/clippy. Verhelp uitsluitend de reeds bekende canvas-testwaarschuwing als de aanpassing dezelfde tests raakt. Commit en rapporteer resultaten/voorwaarden voor Mac-CI.
+- [x] Draai de relevante tests voor de wijziging en leg het ontbrekende gedrag vast. Gebruik voor native tests de Mac-CI uit Task 1.
+- [x] Voeg Quick Look-thumbnailgeneratie toe. Voorkeur: kleine Objective-C bridge via `cc` in build.rs, gelinkt aan Foundation/AppKit/QuickLookThumbnailing en gecompileerd met ARC, zonder los uitvoerbaar hulpmiddel. Rust behoudt de bestaande PNG-cache. Begrens aanvraagwachttijd; behandel timeout, callback-lifetime, geheugenownership en foutpaden veilig. Gebruik geen shellinterpolatie of netwerk.
+- [x] Laat miniaturen alleen gewone lokale bestanden lezen en behoud de bestaande bestandstegel bij onbekende typen. Test PNG-inhoud en cachehergebruik, geen assertion op alleen het bestaan van een mock.
+- [x] Voeg Nederlandse Downloads/Desktop/Documents-gebruiksbeschrijvingen toe waar vereist. Vertaal permission denied/operation not permitted naar stabiele, begrijpelijke fouttekst en behoud die door de UI-errorfilter. Geef de gebruiker een herstelroute met opnieuw proberen/map kiezen; vraag geen volledige schijftoegang.
+- [x] Gebruik Finder-tekst en Command-toets op Mac, behoud Windows-tekst en Ctrl. Gebruik de bestaande Tauri opener/dialog. Maak venster en raster bruikbaar op kleinere MacBook-schermen met beperkte CSS/configwijzigingen; geen herontwerp of componentmigratie.
+- [x] Draai gerichte UI-tests, daarna `pnpm test`, `pnpm build`, Rust-tests/clippy. Verhelp uitsluitend de reeds bekende canvas-testwaarschuwing als de aanpassing dezelfde tests raakt. Commit en rapporteer resultaten/voorwaarden voor Mac-CI.
 
 ## Task 3: Universele testbuild en gecontroleerde distributie
 
