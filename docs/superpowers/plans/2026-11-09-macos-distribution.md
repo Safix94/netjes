@@ -30,7 +30,7 @@
 
 **Interfaces:** Behoud alle bestaande Tauri-commandosignaturen. `move_path_no_replace` blijft het gedeelde verplaatsingspad voor opruimen en herstel. De scan levert alleen verwerkbare lokale gewone bestanden; `skipped` telt uitgesloten bestanden. `normalize_root` levert een consistent absoluut platformpad; Mac-paden behouden hoofdletters.
 
-- [ ] Maak regressietests voor weigeren van bestaand doel (bestaande Windows-only test ook op Mac), Unix-root, beschermde/gesymlinkte mappen, verschillende herstelbestanden bij hoofdletterverschil, cloud-/verborgen bestanden en pakketmappen. Platformtests gebruiken cfg; tests mogen geen echte gebruikersbestanden verplaatsen.
+- [x] Maak regressietests voor weigeren van bestaand doel (bestaande Windows-only test ook op Mac), Unix-root, beschermde/gesymlinkte mappen, verschillende herstelbestanden bij hoofdletterverschil, cloud-/verborgen bestanden en pakketmappen. Platformtests gebruiken cfg; tests mogen geen echte gebruikersbestanden verplaatsen.
 
 ```rust
 let dir = tempfile::tempdir().unwrap();
@@ -43,12 +43,12 @@ assert_eq!(std::fs::read(&src).unwrap(), b"nieuw");
 assert_eq!(std::fs::read(&dst).unwrap(), b"oud");
 ```
 
-- [ ] Draai gerichte tests voor implementatie en leg RED vast waar dit platform dat toelaat. Mac-only RED wordt op de Mac-runner gecontroleerd; rapporteer geen niet-uitgevoerde test.
-- [ ] Gebruik op Mac `libc::renamex_np` met `libc::RENAME_EXCL` en CString uit native Unix-padbytes. Geef systeemfouten terug, zonder terugval op overschrijvende rename. Windows MoveFileExW blijft behouden. Andere niet-ondersteunde platformen falen veilig.
-- [ ] Splits padnormalisatie en systeemmapbescherming per platform. Behoud `/`, canonicaliseer bestaande Mac-mappen, controleer wortels/mountpoints en beschermde bomen inclusief home/Library. Behoud Windows-herstelhashes; gebruik op Mac hoofdletterbehoudende consistente paden.
-- [ ] Behandel Mac hidden/dataless flags, puntbestanden en onvolledige downloads. Sla niet-lokale bestanden over voordat hashen, miniaturen of verplaatsen begint. Controleer `is_file()` zodat speciale bestanden buiten de scan blijven. Voeg alleen macOS-afhankelijkheden onder de macOS-cfg toe.
-- [ ] Voeg macos-15 en macos-15-intel toe aan CI met bestaande tests/build/clippy. Voeg minimale Mac-config toe: app/dmg, minimumSystemVersion 13.0; Windows NSIS blijft zoals het is. Gebruik geen Apple-secrets in PR-CI.
-- [ ] Draai `cargo test --manifest-path src-tauri/Cargo.toml` en `cargo clippy --manifest-path src-tauri/Cargo.toml -- -D warnings` op Windows; commit de taak. Controller pusht de featurebranch en verzamelt dezelfde resultaten van beide Mac-runners, en laat fouten oplossen voor afronding.
+- [x] Draai gerichte tests voor implementatie en leg RED vast waar dit platform dat toelaat. Mac-only RED wordt op de Mac-runner gecontroleerd; rapporteer geen niet-uitgevoerde test.
+- [x] Gebruik op Mac `libc::renamex_np` met `libc::RENAME_EXCL` en CString uit native Unix-padbytes. Geef systeemfouten terug, zonder terugval op overschrijvende rename. Windows MoveFileExW blijft behouden. Andere niet-ondersteunde platformen falen veilig.
+- [x] Splits padnormalisatie en systeemmapbescherming per platform. Behoud `/`, canonicaliseer bestaande Mac-mappen, controleer wortels/mountpoints en beschermde bomen inclusief home/Library. Behoud Windows-herstelhashes; gebruik op Mac hoofdletterbehoudende consistente paden.
+- [x] Behandel Mac hidden/dataless flags, puntbestanden en onvolledige downloads. Sla niet-lokale bestanden over voordat hashen, miniaturen of verplaatsen begint. Controleer `is_file()` zodat speciale bestanden buiten de scan blijven. Voeg alleen macOS-afhankelijkheden onder de macOS-cfg toe.
+- [x] Voeg macos-15 en macos-15-intel toe aan CI met bestaande tests/build/clippy. Voeg minimale Mac-config toe: app/dmg, minimumSystemVersion 13.0; Windows NSIS blijft zoals het is. Gebruik geen Apple-secrets in PR-CI.
+- [x] Draai `cargo test --manifest-path src-tauri/Cargo.toml` en `cargo clippy --manifest-path src-tauri/Cargo.toml -- -D warnings` op Windows; commit de taak. Controller pusht de featurebranch en verzamelt dezelfde resultaten van beide Mac-runners, en laat fouten oplossen voor afronding.
 
 ## Task 2: Native miniaturen en bruikbare Mac-interface
 
