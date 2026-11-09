@@ -1,5 +1,7 @@
 # Netjes voor macOS: goedgekeurd ontwerp
 
+**Bijgesteld besluit:** de gebruiker kiest expliciet voor gratis distributie zonder betaald Apple Developer-account. Dit vervangt de eerdere verplichting tot Developer ID/notarization. De getekende workflow blijft optioneel. De ad-hoc ondertekende DMG krijgt duidelijke installatie-uitleg met de mogelijke stap Open toch; een probleemloze installatie wordt niet beloofd. Praktijktests blijven open. Zie de actuele [releasehandleiding](../../macos-release.md).
+
 De gebruiker heeft op 9 november 2026 het onderzoek en de voorgestelde aanpak goedgekeurd en gevraagd het plan uit te voeren. Er is nog geen Apple Developer-account en geen eigen Mac. Dit document legt dat ontwerp vast; het is geen bewijs dat de publieke Mac-release al klaar is.
 
 ## Gewenst resultaat
@@ -16,7 +18,7 @@ Netjes blijft dezelfde lokale, gratis opruimapp, met dezelfde React-interface en
 - Miniaturen gebruiken een native Mac-voorziening, met begrensde wachttijd en veilige terugval naar de bestaande bestandstegel.
 - Toegang weigeren levert een begrijpelijke Nederlandse melding met een herstelroute op; volledige schijftoegang is geen standaardvereiste.
 - Bouwdoel macOS 13.0 of nieuwer, beide architecturen. CI draait op macos-15 en macos-15-intel. Compatibiliteit met de ondergrens blijft onderdeel van de praktische acceptatie.
-- Publieke distributie vereist Developer ID-ondertekening, hardened runtime, succesvolle notarization en stapling. Zonder credentials geen publieke release.
+- De gekozen distributie gebruikt ad-hoc ondertekening zonder Apple-account. Developer ID, hardened runtime, notarization en stapling horen bij de optionele betaalde route.
 - De huidige versiecheck blijft een melding met een downloadlink; geen automatische updater toevoegen.
 - Geen telemetrie, nieuwe server, nieuwe componentbibliotheek of herontwerp. Bestaande UI-conventies blijven behouden.
 
@@ -24,9 +26,9 @@ Netjes blijft dezelfde lokale, gratis opruimapp, met dezelfde React-interface en
 
 GitHub CI bouwt en test de Mac-code en produceert een duidelijk als testbuild aangeduid universeel artifact. Een afzonderlijke handmatig gestarte releaseprocedure controleert secrets, bouwt, ondertekent, notariseert en verifieert het resultaat voordat een conceptrelease kan worden gemaakt. Die procedure publiceert niet automatisch.
 
-Een echte browserdownload op een schone Mac moet voor publieke vrijgave bewijzen: installeren zonder beveiligingsomweg, eerste-startbevestiging, maptoegang toestaan/weigeren/herstellen, miniaturen, opruimen en ongedaan maken met naamconflicten, herstart/herstel, cloudbestanden, Finder en klein scherm. Test op Intel en Apple Silicon, en op de geclaimde minimale macOS-versie.
+Een echte browserdownload op een schone Mac moet voor publieke vrijgave bewijzen: installeren met de gedocumenteerde eventuele stap Open toch, eerste-startbevestiging, maptoegang toestaan/weigeren/herstellen, miniaturen, opruimen en ongedaan maken met naamconflicten, herstart/herstel, cloudbestanden, Finder en klein scherm. Test op Intel en Apple Silicon, en op de geclaimde minimale macOS-versie.
 
-De websitebron staat niet in deze repository. Websitewijzigingen worden daarom als afzonderlijke vrijgavestap beschreven, niet als uitgevoerd gemeld. Apple-account, certificaten, notarization en menselijke Mac-acceptatie blijven expliciete externe voorwaarden zolang ze ontbreken.
+De websitebron staat niet in deze repository. Websitewijzigingen worden daarom als afzonderlijke vrijgavestap beschreven, niet als uitgevoerd gemeld. Menselijke Mac-acceptatie blijft open. Een Apple-account, certificaten en notarization zijn geen voorwaarden voor de gekozen gratis route.
 
 ## Bronnen
 

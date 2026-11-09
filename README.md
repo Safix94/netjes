@@ -1,6 +1,6 @@
 # Netjes
 
-Netjes ruimt je Downloads-map op. Het is een gratis Windows-app van Agentiek: je ziet je bestanden in nette mappen terechtkomen, met een animatie erbij.
+Netjes ruimt je Downloads-map op. Het is een gratis app van Agentiek voor Windows en macOS: je ziet je bestanden in nette mappen terechtkomen, met een animatie erbij. De Mac-versie is voorlopig een testversie.
 
 - Netjes verplaatst enkel bestanden en verwijdert nooit iets.
 - Alles draait volledig op je eigen pc. Er verlaat niets je computer.
@@ -12,11 +12,18 @@ Meer uitleg volgt op agentiek.be.
 
 Download rechtstreeks: https://github.com/Safix94/netjes/releases/latest/download/Netjes-Setup.exe. Die link geeft altijd de nieuwste versie. Het bestand heet `Netjes-Setup.exe` en werkt op Windows 10 en 11 (64 bit). Versie 1.0 installeert geen updates zelf: de knop "Controleren op updates" in de kop vergelijkt met de nieuwste release en linkt naar de downloadpagina. Geen telemetrie.
 
-## macOS in voorbereiding
+## Mac-versie — gratis, zonder Apple-account
 
-De Mac-versie is nog niet publiek vrijgegeven. CI bouwt een universele testbuild voor Apple Silicon en Intel met bouwdoel macOS 13.0. Het artifact `Netjes-macOS-testbuild` op [GitHub Actions](https://github.com/Safix94/netjes/actions/workflows/ci.yml) is ad-hoc ondertekend en niet genotariseerd: het is geen publieke installer.
+**[Download de Mac-testversie (Intel en Apple Silicon)](https://github.com/Safix94/netjes/actions/runs/42657236671/artifacts/13695105932)**. GitHub vraagt hiervoor een GitHub-login. Pak het ZIP-bestand uit en open `Netjes-testbuild.dmg`. Dit Actions-artifact vervalt op 9 december 2026; het is nog geen blijvende download bij Releases.
 
-[Bouw- en releasehandleiding](docs/macos-release.md) bevat de commando's, verificatie en acceptatiechecklist. Publieke distributie wacht op een Apple Developer-account, Developer ID-ondertekening, notarization en tests op echte Macs, inclusief macOS 13. De voorbereide releaseworkflow maakt uitsluitend een conceptrelease. De websitebron voor agentiek.be staat buiten deze repository; een Mac-downloadknop is een latere vrijgavestap.
+De app bevat beide Mac-architecturen, met bouwdoel macOS 13 of nieuwer. De automatische tests draaien op macOS 15; installatie op een echte Mac en compatibiliteit met macOS 13 zijn nog niet handmatig bevestigd.
+
+1. Open de DMG en sleep **Netjes** naar **Programma's**.
+2. Open Netjes vanuit Programma's. De app is ad-hoc ondertekend, zonder Apple Developer ID of notarization. macOS kan hem daarom blokkeren.
+3. Vertrouw je deze download, open dan **Systeeminstellingen → Privacy en beveiliging** en kies **Open toch** bij de melding over Netjes. Bevestig het openen. Die optie is niet op elke beheerde Mac beschikbaar; installatie zonder extra stappen is niet gegarandeerd. Zie [Apples uitleg](https://support.apple.com/nl-nl/102445).
+4. Geef Netjes toegang tot de map die je wilt opruimen. Probeer de testversie eerst met een map met kopieën van bestanden.
+
+Er is geen betaald Apple-account nodig voor deze distributieroute, ook niet voor de maker. De code staat op [de Mac-branch](https://github.com/Safix94/netjes/tree/feat/macos-distribution), met [pull request #1](https://github.com/Safix94/netjes/pull/1). De [bouw- en releasehandleiding](docs/macos-release.md) beschrijft de gratis route en de resterende praktijktests. De websitebron voor agentiek.be staat buiten deze repository; daar is nog geen Mac-downloadknop toegevoegd.
 
 ## Windows-waarschuwing
 

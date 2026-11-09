@@ -1,6 +1,16 @@
-# macOS: testbuild en voorbereiding op distributie
+# macOS: gratis distributie zonder Apple-account
 
 Netjes voor macOS is ontwikkelaarsklaar voor CI en acceptatie, maar **nog niet publiek vrijgegeven**. De universele testbuild bevat Apple Silicon (`arm64`) en Intel (`x86_64`), met bouwdoel macOS 13.0. CI draait op macOS 15; dit bewijst de werking op macOS 13 of echte gebruikershardware nog niet. Er is momenteel geen Apple Developer-account, certificaat of eigen test-Mac beschikbaar.
+
+**Besluit van de gebruiker:** Netjes wordt zonder betaald Apple Developer-account verspreid. Developer ID en notarization zijn geen voorwaarde voor deze route. De bestaande getekende releaseworkflow blijft uitsluitend een optionele mogelijkheid; hij is niet nodig om de ad-hoc ondertekende DMG aan te bieden. macOS kan de gratis build blokkeren en gebruikers kunnen extra stappen nodig hebben.
+
+## Downloaden en installeren
+
+De [README](../README.md#mac-versie--gratis-zonder-apple-account) bevat de concrete Mac-testdownload en installatie-instructies. Het huidige Actions-artifact vereist een GitHub-login en verloopt na 30 dagen. Er bestaat nog geen blijvende Mac-download onder GitHub Releases.
+
+Voor een blijvende download na de praktijktest: maak een afzonderlijke Mac-release met de geverifieerde DMG als `Netjes-macOS.dmg`, de bijbehorende SHA256 en installatie-uitleg. Leg broncommit, CI-run en testresultaten vast. Vermeld duidelijk dat de app niet door Apple is genotariseerd. Houd de bestaande Windows-release en `latest`-download intact; gebruik voor een eerste proefrelease een aparte prerelease met `--latest=false`. Daarvoor zijn geen Apple-secrets nodig. De huidige `macos-release.yml` is specifiek voor de optionele getekende route en moet hiervoor niet worden gebruikt.
+
+Gebruikers openen de DMG, slepen Netjes naar Programma's en starten hem daar. Bij een blokkade voor een onbekende ontwikkelaar kunnen zij, als ze de download vertrouwen, **Systeeminstellingen → Privacy en beveiliging → Open toch** gebruiken. Zie [Apple](https://support.apple.com/nl-nl/102445). Die mogelijkheid is niet op elke beheerde Mac beschikbaar. Schakel Gatekeeper niet volledig uit. Een melding over malware of een beschadigde app moet worden onderzocht; beloof geen universeel werkende omweg.
 
 De versiecontrole blijft handmatig: de knop vergelijkt versies en opent een downloadlink. Er is geen automatische updater, telemetrie of nieuwe server toegevoegd.
 
@@ -36,7 +46,7 @@ shasum -a 256 -c SHA256SUMS
 
 Het artifact bevat `Netjes-testbuild.dmg`, `Netjes.app.zip`, `SHA256SUMS`, `TESTBUILD.txt` met broncommit en `verification.txt`. Het verloopt na 30 dagen. De ZIP bewaart Mac-bundlestructuur en permissies. Pak hem op een Mac uit met `ditto -x -k Netjes.app.zip .` en voer de verificateur opnieuw uit tegen de gedownloade DMG. De verificateur mount de DMG alleen-lezen, vergelijkt de ingesloten app met de gecontroleerde app, controleert de Programma's-link en verifieert ook de gemounte app.
 
-**Dit artifact is ad-hoc ondertekend en niet genotariseerd. Het is geen publieke installer.** De distributiemodus moet deze build weigeren:
+**Dit artifact is ad-hoc ondertekend en niet genotariseerd. Het is momenteel een testbuild.** De bestaande modus `--distribution` controleert specifiek de optionele Developer ID-route en moet deze build weigeren. Die weigering betekent niet dat gratis verspreiden verboden is. Voor de gratis route blijven de structuur-, architectuur-, integriteits- en DMG-controles in `--test` relevant; ze bewijzen geen probleemloze Gatekeeper-installatie:
 
 ```sh
 bash scripts/verify-macos-bundle.sh --distribution Netjes.app Netjes-testbuild.dmg
@@ -45,9 +55,9 @@ bash scripts/verify-macos-bundle.sh --distribution Netjes.app Netjes-testbuild.d
 
 De CI-integratietest controleert ook ontbrekende argumenten/bestanden, een dunne executable, beschadigde handtekening, onjuiste minimale OS-versie en een geldige maar andere app dan die in de DMG. De releasepreflight heeft lokale tests: `python scripts/test-macos-release.py` (Python 3.11+).
 
-## Voorwaarden voor een getekende conceptrelease
+## Optioneel: voorwaarden voor een getekende conceptrelease
 
-Voor distributie buiten de App Store zijn een [Apple Developer-lidmaatschap](https://developer.apple.com/programs/enroll/), een **Developer ID Application**-certificaat met private sleutel en App Store Connect-notarizationrechten nodig. Gebruik geen Apple Development- of App Store-distributieprofiel. Regel dit later via een privé secretkanaal; deel nooit sleutels of wachtwoorden in chat, Git, logs of artifacts.
+Alleen voor Developer ID-ondertekening en notarization zijn een [Apple Developer-lidmaatschap](https://developer.apple.com/programs/enroll/), een **Developer ID Application**-certificaat met private sleutel en App Store Connect-notarizationrechten nodig. Dit is niet de gekozen gratis route. Gebruik voor deze optionele route geen Apple Development- of App Store-distributieprofiel. Deel nooit sleutels of wachtwoorden in chat, Git, logs of artifacts.
 
 Maak in GitHub de environment `macos-release`, bij voorkeur met verplichte reviewer en beperkingen tot vertrouwde release-refs. Configureer deze secretNAMEN (geen waarden in documentatie):
 
@@ -63,7 +73,7 @@ Maak in GitHub de environment `macos-release`, bij voorkeur met verplichte revie
 
 Er is geen Apple ID-accountwachtwoord nodig. Het tijdelijke keychainwachtwoord wordt op de runner gegenereerd. Certificaat, API-key en keychain staan uitsluitend onder `$RUNNER_TEMP/netjes-signing`; een `always()`-stap herstelt de keychainzoeklijst en verwijdert het materiaal, ook bij mislukken of annuleren. Credentials worden niet als buildartifact opgeslagen.
 
-## Handmatig een draft voorbereiden
+## Optioneel: handmatig een getekende draft voorbereiden
 
 De workflow `.github/workflows/macos-release.yml` is voorbereid; hij is zonder secrets niet uitgevoerd. GitHub vereist dat een `workflow_dispatch`-workflow eerst op de standaardbranch bestaat voordat deze handmatig gestart kan worden. Integratie in die branch en ondertekening zijn afzonderlijke toekomstige stappen, geen onderdeel van deze implementatie.
 
@@ -98,9 +108,9 @@ spctl --assess --type open --context context:primary-signature --verbose=2 Netje
 
 ## Acceptatie vóór publieke vrijgave
 
-Gebruik een schone Mac en een echte browserdownload van de **getekende, genotariseerde** kandidaat, zodat quarantine en Gatekeeper daadwerkelijk worden getest. Open de DMG, sleep Netjes naar Programma's, werp de DMG uit en start de geïnstalleerde app vanuit Finder. Bevestig alleen de normale eerste-startvraag. Een beveiligingsomweg is geen geslaagde installatie; bij een blokkade stopt de vrijgave en wordt de kandidaat onderzocht.
+Gebruik een schone Mac en een echte browserdownload van de kandidaat, zodat quarantine en Gatekeeper daadwerkelijk worden getest. Open de DMG, sleep Netjes naar Programma's, werp de DMG uit en start de geïnstalleerde app vanuit Finder. Voor de gekozen gratis route hoort de eventuele stap **Open toch** bij de installatietest: leg de exacte melding en benodigde stappen vast. Als dit niet werkt, onderzoek de kandidaat voordat je een werkende download belooft. Alleen bij de optionele getekende route is installeren zonder deze uitzondering het acceptatiecriterium.
 
-- [ ] Apple Silicon én Intel: browserdownload, DMG, slepen naar Programma's, Finder-start en eerste-startmelding zonder beveiligingsomweg.
+- [ ] Apple Silicon én Intel: browserdownload, DMG, slepen naar Programma's, Finder-start en eerste-startmelding; eventuele stap Open toch werkt volgens de installatie-uitleg.
 - [ ] Dezelfde kernscenario's op echte macOS 13-systemen, inclusief beide architecturen voor zover die minimumclaim wordt gedaan; macOS 15-CI bewijst deze ondergrens niet.
 - [ ] Downloads-toegang toestaan, weigeren en later herstellen met begrijpelijke Nederlandse melding en de juiste Instellingenroute. Volledige schijftoegang is geen standaardvereiste.
 - [ ] Quick Look-miniaturen, niet-ondersteunde bestanden en timeout/terugval; groot bestandenaantal zonder vastlopende interface.

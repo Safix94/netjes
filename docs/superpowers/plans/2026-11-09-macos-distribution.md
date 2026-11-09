@@ -1,5 +1,7 @@
 # Netjes macOS Implementation Plan
 
+**Bijgesteld besluit na implementatie:** de gebruiker kiest gratis distributie zonder betaald Apple-account. De hieronder afgevinkte taken beschrijven de uitgevoerde bouw en controles; de getekende workflow is voortaan optioneel. De actuele download en installatie-uitleg staan in de README en [releasehandleiding](../../macos-release.md). Een echte Mac-installatietest blijft open, maar het ontbreken van Apple-credentials blokkeert de gratis route niet.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development to implement this plan task-by-task. Steps use checkbox syntax for tracking.
 
 **Goal:** Een veilige Mac-versie bouwen en technisch controleren, met een voorbereide rechtstreekse distributie buiten de App Store.
@@ -20,7 +22,7 @@
 - Miniaturen gebruiken een native Mac-voorziening, met begrensde wachttijd en veilige terugval naar de bestaande bestandstegel.
 - Toegang weigeren levert een begrijpelijke Nederlandse melding met een herstelroute op; volledige schijftoegang is geen standaardvereiste.
 - Bouwdoel macOS 13.0 of nieuwer, beide architecturen. CI draait op macos-15 en macos-15-intel. Compatibiliteit met de ondergrens blijft onderdeel van de praktische acceptatie.
-- Publieke distributie vereist Developer ID-ondertekening, hardened runtime, succesvolle notarization en stapling. Zonder credentials geen publieke release.
+- De gekozen publieke distributie gebruikt ad-hoc ondertekening zonder betaald Apple-account, met duidelijke uitleg over Gatekeeper en Open toch. Developer ID/notarization is optioneel.
 - De huidige versiecheck blijft een melding met een downloadlink; geen automatische updater toevoegen.
 - Geen telemetrie, nieuwe server, nieuwe componentbibliotheek of herontwerp. Bestaande UI-conventies blijven behouden.
 
@@ -95,7 +97,6 @@ lipo -verify_arch arm64 x86_64 "$app/Contents/MacOS/netjes"
 
 ## Externe vrijgavevoorwaarden
 
-- [ ] Apple Developer-lidmaatschap en Developer ID Application-certificaat instellen via een privé secretkanaal.
-- [ ] Getekende releaseworkflow daadwerkelijk uitvoeren, notarization/stapling verifiëren.
+- Niet vereist voor de gekozen route: Apple Developer-lidmaatschap, certificaat en uitvoering van de optionele getekende releaseworkflow.
 - [ ] Browserdownload en acceptatie op echte Macs, inclusief macOS 13-ondergrens, afronden.
 - [ ] Na acceptatie release publiceren en Mac-downloadknop op agentiek.be toevoegen vanuit de website-repository.
