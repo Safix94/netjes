@@ -130,22 +130,33 @@ async fn with_state<T: Send + 'static>(
 /// De ene vorm van een mappad waarmee alles werkt: absoluut, zonder `\\?\`-voorvoegsel en zonder
 /// slotscheidingsteken. De undo-logs zijn op deze tekst gehasht, dus hij moet overal gelijk zijn.
 fn normalize_root(root: &str) -> Result<PathBuf, String> {
-    let absolute = std::path::absolute(root).map_err(|_| NOT_A_FOLDER.to_string())?;
-    let text = absolute.to_string_lossy();
-    let text = if let Some(rest) = text.strip_prefix(r"\\?\UNC\") {
-        format!(r"\\{rest}")
-    } else if let Some(rest) = text.strip_prefix(r"\\?\") {
-        rest.to_string()
-    } else {
-        text.into_owned()
-    };
-    let trimmed = text.trim_end_matches(['\\', '/']);
-    // `C:` zonder scheidingsteken is de huidige map van die schijf; een schijfwortel houdt zijn teken.
-    Ok(if trimmed.ends_with(':') {
-        PathBuf::from(format!(r"{trimmed}\"))
-    } else {
-        PathBuf::from(trimmed)
-    })
+    if root.is_empty() {
+        return Err(NOT_A_FOLDER.to_string());
+    }
+    #[cfg(not(windows))]
+    {
+        // realpath behoudt Unix-padbytes, hoofdletters en de wortel `/`.
+        std::fs::canonicalize(root).map_err(|err| folder_error_text(&err, NOT_A_FOLDER))
+    }
+    #[cfg(windows)]
+    {
+        let absolute = std::path::absolute(root).map_err(|_| NOT_A_FOLDER.to_string())?;
+        let text = absolute.to_string_lossy();
+        let text = if let Some(rest) = text.strip_prefix(r"\\?\UNC\") {
+            format!(r"\\{rest}")
+        } else if let Some(rest) = text.strip_prefix(r"\\?\") {
+            rest.to_string()
+        } else {
+            text.into_owned()
+        };
+        let trimmed = text.trim_end_matches(['\\', '/']);
+        // `C:` zonder scheidingsteken is de huidige map van die schijf; een schijfwortel houdt zijn teken.
+        Ok(if trimmed.ends_with(':') {
+            PathBuf::from(format!(r"{trimmed}\"))
+        } else {
+            PathBuf::from(trimmed)
+        })
+    }
 }
 
 fn root_string(root: &Path) -> String {
@@ -156,7 +167,30 @@ fn scan_error_text(error: ScanError) -> String {
     match error {
         ScanError::Forbidden => FORBIDDEN_ROOT.to_string(),
         ScanError::NotADirectory => NOT_A_FOLDER.to_string(),
+        ScanError::PermissionDenied => scan::PERMISSION_DENIED.to_string(),
         io @ ScanError::Io(_) => io.to_string(),
+    }
+}
+
+fn folder_error_text(error: &std::io::Error, fallback: &str) -> String {
+    if scan::is_permission_denied(error) {
+        scan::PERMISSION_DENIED.to_string()
+    } else {
+        fallback.to_string()
+    }
+}
+
+fn recover_permission_errors(outcomes: &mut [MoveOutcome]) {
+    if !cfg!(target_os = "macos") {
+        return;
+    }
+    // Move/undo outcomes already contain Rust io::Error display strings, including the OS code.
+    for outcome in outcomes {
+        if let Some(error) = &mut outcome.error
+            && (error.ends_with("(os error 1)") || error.ends_with("(os error 13)"))
+        {
+            *error = scan::PERMISSION_DENIED.to_string();
+        }
     }
 }
 
@@ -202,8 +236,12 @@ fn begin_organize_impl(state: &AppState, root: &str) -> Result<OrganizePlan, Str
         .copied()
         .filter(|&category| moves.iter().any(|m| m.category == category))
         .collect();
-    let created = mover::ensure_folders(&root, &used)
-        .map_err(|e| format!("De categoriemappen konden niet aangemaakt worden: {e}"))?;
+    let created = mover::ensure_folders(&root, &used).map_err(|e| {
+        folder_error_text(
+            &e,
+            &format!("De categoriemappen konden niet aangemaakt worden: {e}"),
+        )
+    })?;
     undo::write_planned_in(&state.log_dir(), &root, &moves, &created)
         .map_err(|e| format!("Het ongedaan-maken-log kon niet bewaard worden: {e}"))?;
 
@@ -249,6 +287,7 @@ fn move_files_impl(state: &AppState, root: &str, ids: &[u32]) -> Result<Vec<Move
     }
 
     let mut outcomes = mover::move_many(&selected);
+    recover_permission_errors(&mut outcomes);
     if let Err(e) = undo::apply_outcomes_in(&state.log_dir(), &root, &outcomes) {
         // De bestanden zijn al verplaatst; meld dat het log dat niet weet, op dezelfde manier als
         // `undo::restore` dat doet.
@@ -293,7 +332,10 @@ fn restore_impl(
     let restored = undo::restore_in(&state.log_dir(), &root, remove_created_folders);
     // Na het terugzetten klopt het plan niet meer; een nieuwe ronde begint met `begin_organize`.
     *lock(&state.plan) = None;
-    restored.map_err(|e| format!("Het terugzetten is mislukt: {e}"))
+    let mut restored =
+        restored.map_err(|e| folder_error_text(&e, &format!("Het terugzetten is mislukt: {e}")))?;
+    recover_permission_errors(&mut restored.errors);
+    Ok(restored)
 }
 
 fn list_folder_files_impl(root: &str, category: Category) -> Result<Vec<FileEntry>, String> {
@@ -312,6 +354,48 @@ mod tests {
     use std::fs;
     use std::time::{Duration, SystemTime};
     use tempfile::{TempDir, tempdir};
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn mac_canonicalization_permission_denial_has_recovery_instead_of_not_a_folder() {
+        use std::os::unix::fs::PermissionsExt;
+        let tmp = tempdir().unwrap();
+        let parent = tmp.path().join("afgesloten");
+        let child = parent.join("Downloads");
+        fs::create_dir_all(&child).unwrap();
+        fs::set_permissions(&parent, fs::Permissions::from_mode(0o000)).unwrap();
+        let normalized = normalize_root(&child.to_string_lossy());
+        let scanned = scan_impl(&AppState::default(), &child.to_string_lossy());
+        let unreadable = scan::scan_directory(&parent).map_err(scan_error_text);
+        fs::set_permissions(&parent, fs::Permissions::from_mode(0o700)).unwrap();
+        assert!(normalized.unwrap_err().contains("Systeeminstellingen"));
+        assert!(scanned.unwrap_err().contains("Systeeminstellingen"));
+        assert_eq!(unreadable.unwrap_err(), scan::PERMISSION_DENIED);
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn mac_move_and_undo_permission_failures_keep_the_recovery_route() {
+        use std::os::unix::fs::PermissionsExt;
+        let fx = Fixture::new();
+        let (root, plan) = fx.scanned_and_planned();
+        let id = Fixture::id_of(&plan, "b.pdf");
+        fs::set_permissions(fx.root(), fs::Permissions::from_mode(0o555)).unwrap();
+        let failed_move = move_files_impl(&fx.state, &root, &[id]).unwrap();
+        fs::set_permissions(fx.root(), fs::Permissions::from_mode(0o700)).unwrap();
+        assert!(!failed_move[0].ok);
+        let failure = failed_move[0].error.as_deref().unwrap();
+        assert!(failure.contains("Systeeminstellingen"), "{failure}");
+
+        assert!(move_files_impl(&fx.state, &root, &[id]).unwrap()[0].ok);
+        fs::set_permissions(fx.root(), fs::Permissions::from_mode(0o555)).unwrap();
+        let failed_undo = undo_organize_impl(&fx.state, &root).unwrap();
+        fs::set_permissions(fx.root(), fs::Permissions::from_mode(0o700)).unwrap();
+        assert_eq!(failed_undo.restored, 0);
+        let failure = failed_undo.errors[0].error.as_deref().unwrap();
+        assert!(failure.contains("Systeeminstellingen"), "{failure}");
+        assert_eq!(undo_organize_impl(&fx.state, &root).unwrap().restored, 1);
+    }
 
     struct Fixture {
         root_dir: TempDir,
@@ -351,7 +435,7 @@ mod tests {
         }
 
         fn root_str(&self) -> String {
-            root_string(self.root())
+            root_string(&normalize_root(&root_string(self.root())).unwrap())
         }
 
         /// Scant en start het opruimen; geeft de gescande root en het plan terug.
@@ -410,7 +494,7 @@ mod tests {
     #[test]
     fn scan_stores_and_returns_one_canonical_root() {
         let fx = Fixture::new();
-        let with_slash = format!("{}\\", fx.root_str());
+        let with_slash = format!("{}{sep}", fx.root_str(), sep = std::path::MAIN_SEPARATOR);
         let scan = scan_impl(&fx.state, &with_slash).unwrap();
         assert_eq!(scan.root, fx.root_str());
         assert!(!scan.root.starts_with(r"\\?\"));
@@ -418,6 +502,7 @@ mod tests {
         assert_eq!(stored.as_ref().unwrap().root, scan.root);
     }
 
+    #[cfg(windows)]
     #[test]
     fn normalize_root_strips_verbatim_prefix_and_trailing_separators() {
         assert_eq!(
@@ -435,11 +520,13 @@ mod tests {
     #[test]
     fn scan_refuses_forbidden_roots_and_non_folders() {
         let fx = Fixture::new();
-        assert_eq!(
-            scan_impl(&fx.state, r"C:\Windows").unwrap_err(),
-            FORBIDDEN_ROOT
-        );
-        assert_eq!(scan_impl(&fx.state, r"C:\").unwrap_err(), FORBIDDEN_ROOT);
+        #[cfg(windows)]
+        let protected = [r"C:\Windows", r"C:\"];
+        #[cfg(not(windows))]
+        let protected = ["/System", "/"];
+        for path in protected {
+            assert_eq!(scan_impl(&fx.state, path).unwrap_err(), FORBIDDEN_ROOT);
+        }
         let file = fx.root().join("b.pdf");
         assert_eq!(
             scan_impl(&fx.state, &root_string(&file)).unwrap_err(),
@@ -577,7 +664,7 @@ mod tests {
         let ids: Vec<u32> = plan.moves.iter().map(|m| m.id).collect();
         move_files_impl(&fx.state, &root, &ids).unwrap();
 
-        let trailing_backslash = format!("{root}\\");
+        let trailing_backslash = format!("{root}{sep}", sep = std::path::MAIN_SEPARATOR);
         let forward_slashes = format!("{}/", root.replace('\\', "/"));
         for spelling in [&trailing_backslash, &forward_slashes] {
             assert_eq!(
@@ -631,9 +718,32 @@ mod tests {
             list_folder_files_impl(&root, Category::Audio).unwrap_err(),
             NOT_A_FOLDER
         );
+        #[cfg(windows)]
         assert_eq!(
             list_folder_files_impl(r"C:\Windows", Category::Fotos).unwrap_err(),
             FORBIDDEN_ROOT
+        );
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn mac_normalize_keeps_root_case_and_resolves_existing_symlinks() {
+        use std::os::unix::fs::symlink;
+        assert_eq!(normalize_root("/").unwrap(), Path::new("/"));
+        assert!(normalize_root("").is_err());
+        let tmp = tempdir().unwrap();
+        let actual = tmp.path().join("DownloadsUpper");
+        fs::create_dir(&actual).unwrap();
+        let alias = tmp.path().join("link");
+        symlink(&actual, &alias).unwrap();
+        assert_eq!(
+            normalize_root(&format!("{}/", alias.display())).unwrap(),
+            fs::canonicalize(&actual).unwrap()
+        );
+        assert!(
+            normalize_root(&actual.to_string_lossy())
+                .unwrap()
+                .ends_with("DownloadsUpper")
         );
     }
 }
@@ -644,5 +754,8 @@ pub async fn check_update() -> crate::update::UpdateInfo {
     let current = env!("CARGO_PKG_VERSION");
     tauri::async_runtime::spawn_blocking(move || crate::update::check(current))
         .await
-        .unwrap_or(crate::update::UpdateInfo { state: crate::update::UpdateState::Error, version: None })
+        .unwrap_or(crate::update::UpdateInfo {
+            state: crate::update::UpdateState::Error,
+            version: None,
+        })
 }

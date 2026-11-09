@@ -2187,8 +2187,10 @@ name = "netjes"
 version = "1.0.0"
 dependencies = [
  "blake3",
+ "cc",
  "dirs 6.0.0",
  "image",
+ "libc",
  "serde",
  "serde_json",
  "tauri",

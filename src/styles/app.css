@@ -632,6 +632,61 @@ h2 {
   }
 }
 
+/* Kleinere MacBook-vensters behouden dezelfde groepen, met smallere tegels. */
+@media (max-width: 1199px) {
+  .mo {
+    --stage: 240px;
+    grid-template-columns: 190px minmax(240px, 1fr) 220px;
+    gap: 10px 12px;
+    padding: 18px 20px 14px;
+  }
+
+  .mo-head {
+    padding-right: 0;
+    min-width: 0;
+  }
+
+  .mo-head h1 {
+    font-size: 30px;
+    overflow-wrap: anywhere;
+  }
+
+  .head-actions {
+    position: static;
+    flex-wrap: wrap;
+  }
+
+  .head-actions .update-text {
+    white-space: normal;
+  }
+
+  .crow {
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+
+  .grp-grid {
+    gap: 6px;
+  }
+
+  .mo-card {
+    width: 132px;
+  }
+
+  .mo-card.wide {
+    width: 270px;
+  }
+
+  .viewer-h,
+  .viewer-actions {
+    flex-wrap: wrap;
+  }
+
+  .viewer-grid {
+    grid-template-columns: repeat(auto-fill, minmax(80px, 1fr));
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .rs,
   .mo-card,

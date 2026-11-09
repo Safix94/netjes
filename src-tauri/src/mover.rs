@@ -1,5 +1,6 @@
 use crate::categories::{Category, folder_name};
 use crate::planner::{PlannedMove, unique_dest};
+use crate::{paths, scan};
 use serde::Serialize;
 use std::fs;
 use std::io::{self, ErrorKind};
@@ -23,19 +24,28 @@ pub struct MoveOutcome {
 /// Maakt de ontbrekende categoriemappen rechtstreeks onder `root` aan en geeft enkel die terug
 /// die nu nieuw zijn. Zo kan het logboek ze achteraf weer opruimen als ze leeg blijven.
 pub fn ensure_folders(root: &Path, cats: &[Category]) -> io::Result<Vec<PathBuf>> {
+    if paths::is_forbidden_root(root) {
+        return Err(io::Error::new(ErrorKind::PermissionDenied, INVALID_DEST));
+    }
     let mut created = Vec::new();
     for &cat in cats {
         let folder = root.join(folder_name(cat));
         match fs::create_dir(&folder) {
             Ok(()) => created.push(folder),
-            Err(e) if e.kind() == ErrorKind::AlreadyExists => {}
+            Err(e) if e.kind() == ErrorKind::AlreadyExists => {
+                let metadata = fs::symlink_metadata(&folder)?;
+                if !metadata.is_dir() || metadata.is_symlink() || paths::is_forbidden_root(&folder)
+                {
+                    return Err(io::Error::new(ErrorKind::PermissionDenied, INVALID_DEST));
+                }
+            }
             Err(e) => return Err(e),
         }
     }
     Ok(created)
 }
 
-/// Verplaatst één bestand met één rename naar een vrije naam. Op Windows weigert die rename zelf
+/// Verplaatst één bestand met één rename naar een vrije naam. Op Windows en Mac weigert die rename zelf
 /// een bestaand doel (`rename_no_replace`), dus ook een bestand dat pas tijdens de verplaatsing
 /// verschijnt wordt nooit overschreven; dan kiest de volgende poging een andere naam. Volgt geen
 /// symlinks en blijft binnen de gekozen map (die volgt uit `dest`: `root/<map>/<naam>`).
@@ -110,19 +120,49 @@ fn wide_verbatim(path: &Path) -> Vec<u16> {
         .collect()
 }
 
-/// Buiten Windows bestaat er in `std` geen rename zonder vervangen; Netjes draait enkel op Windows,
-/// dit houdt de bibliotheek compileerbaar.
-#[cfg(not(windows))]
+/// RENAME_EXCL controleert het naamconflict atomair, zonder overschrijvende terugval.
+#[cfg(target_os = "macos")]
 fn rename_no_replace(src: &Path, dest: &Path) -> io::Result<()> {
-    fs::rename(src, dest)
+    use std::ffi::CString;
+    use std::os::unix::ffi::OsStrExt;
+
+    let src = CString::new(src.as_os_str().as_bytes())?;
+    let dest = CString::new(dest.as_os_str().as_bytes())?;
+    // SAFETY: beide CStrings leven gedurende de aanroep en zijn met NUL afgesloten.
+    if unsafe { libc::renamex_np(src.as_ptr(), dest.as_ptr(), libc::RENAME_EXCL) } == 0 {
+        Ok(())
+    } else {
+        Err(io::Error::last_os_error())
+    }
+}
+
+#[cfg(not(any(windows, target_os = "macos")))]
+fn rename_no_replace(_src: &Path, _dest: &Path) -> io::Result<()> {
+    Err(io::Error::new(
+        ErrorKind::Unsupported,
+        "Veilig verplaatsen wordt niet ondersteund",
+    ))
 }
 
 /// Verplaatst `src` naar `dest`, of naar de eerstvolgende vrije naam als `dest` al bezet is, en
-/// geeft het uiteindelijke pad terug. Nooit vervangen: zie `rename_no_replace`. Controleert niet
-/// of de paden binnen een bepaalde map blijven; dat doet de aanroeper.
+/// geeft het uiteindelijke pad terug. Nooit vervangen: zie `rename_no_replace`. Controleert gewone
+/// lokale bestanden en beschermde bomen; de aanroeper bewaakt de gekozen opruimmap.
 pub fn move_path_no_replace(src: &Path, dest: &Path) -> io::Result<PathBuf> {
+    let metadata = fs::symlink_metadata(src)?;
+    if !scan::is_processable_file(src, &metadata) {
+        return Err(io::Error::new(
+            ErrorKind::PermissionDenied,
+            "Dit bestand wordt niet verwerkt",
+        ));
+    }
+    for parent in [src.parent(), dest.parent()] {
+        let parent = parent.ok_or_else(|| io::Error::new(ErrorKind::InvalidInput, INVALID_DEST))?;
+        if paths::is_forbidden_root(parent) {
+            return Err(io::Error::new(ErrorKind::PermissionDenied, INVALID_DEST));
+        }
+    }
     for _ in 0..MAX_ATTEMPTS {
-        let candidate = unique_dest(dest);
+        let candidate = unique_dest(dest)?;
         match rename_no_replace(src, &candidate) {
             Ok(()) => return Ok(candidate),
             Err(e) if e.kind() == ErrorKind::AlreadyExists => continue,
@@ -136,8 +176,16 @@ fn try_move(m: &PlannedMove) -> Result<PathBuf, String> {
     let src = Path::new(&m.src);
     let dest = Path::new(&m.dest);
     let dest_dir = dest.parent().ok_or(INVALID_DEST)?;
+    let metadata = fs::symlink_metadata(dest_dir).map_err(|e| e.to_string())?;
+    if metadata.is_symlink() || !metadata.is_dir() {
+        return Err(INVALID_DEST.to_string());
+    }
     let root =
         fs::canonicalize(dest_dir.parent().ok_or(INVALID_DEST)?).map_err(|e| e.to_string())?;
+
+    if paths::is_forbidden_root(&root) {
+        return Err(INVALID_DEST.to_string());
+    }
 
     let src_dir = src.parent().ok_or(OUTSIDE)?;
     let src_dir = fs::canonicalize(src_dir).map_err(|e| e.to_string())?;
@@ -238,7 +286,6 @@ mod tests {
         assert!(!root.path().join("Foto's").join("vast.jpg").exists());
     }
 
-    #[cfg(windows)]
     #[test]
     fn rename_no_replace_refuses_existing_target_and_leaves_both_untouched() {
         let dir = tempdir().unwrap();
@@ -340,6 +387,32 @@ mod tests {
     }
 
     #[test]
+    fn move_refuses_category_replaced_with_file_promptly_and_preserves_source() {
+        let root = tempdir().unwrap();
+        let src = root.path().join("a.jpg");
+        fs::write(&src, b"foto").unwrap();
+        let m = planned(2, &src, root.path(), "a.jpg", Category::Fotos);
+        ensure_folders(root.path(), &[Category::Fotos]).unwrap();
+        let category = root.path().join("Foto's");
+        fs::remove_dir(&category).unwrap();
+        fs::write(&category, b"vervangen").unwrap();
+
+        let (sender, receiver) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let _ = sender.send(move_one(&m));
+        });
+        let outcome = receiver
+            .recv_timeout(std::time::Duration::from_secs(2))
+            .expect("a non-directory destination must fail promptly");
+
+        assert!(!outcome.ok);
+        assert_eq!(outcome.dest, None);
+        assert_eq!(outcome.error.as_deref(), Some(INVALID_DEST));
+        assert_eq!(fs::read(&src).unwrap(), b"foto");
+        assert_eq!(fs::read(&category).unwrap(), b"vervangen");
+    }
+
+    #[test]
     fn ensure_folders_returns_only_new_ones() {
         let root = tempdir().unwrap();
         fs::create_dir(root.path().join("Foto's")).unwrap();
@@ -403,5 +476,61 @@ mod tests {
 
         assert_eq!(err.kind(), ErrorKind::NotFound);
         assert!(!target.exists());
+    }
+
+    #[test]
+    fn move_refuses_directory_sources() {
+        let root = tempdir().unwrap();
+        let src = root.path().join("pakket.app");
+        fs::create_dir(&src).unwrap();
+        ensure_folders(root.path(), &[Category::Fotos]).unwrap();
+        let outcome = move_one(&planned(
+            1,
+            &src,
+            root.path(),
+            "pakket.app",
+            Category::Fotos,
+        ));
+        assert!(!outcome.ok);
+        assert!(src.is_dir());
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn rename_no_replace_preserves_native_path_bytes_and_system_errors() {
+        let root = tempdir().unwrap();
+        let src = root.path().join("café-雪.txt");
+        let dest = root.path().join("doel");
+        fs::write(&src, b"native").unwrap();
+        rename_no_replace(&src, &dest).unwrap();
+        assert_eq!(fs::read(&dest).unwrap(), b"native");
+        assert_eq!(
+            rename_no_replace(&src, &root.path().join("weg"))
+                .unwrap_err()
+                .kind(),
+            ErrorKind::NotFound
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn move_refuses_symlink_source_and_destination_directory() {
+        use std::os::unix::fs::symlink;
+        let root = tempdir().unwrap();
+        let outside = tempdir().unwrap();
+        let real = outside.path().join("real.jpg");
+        fs::write(&real, b"blijft").unwrap();
+        let src = root.path().join("link.jpg");
+        symlink(&real, &src).unwrap();
+        ensure_folders(root.path(), &[Category::Fotos]).unwrap();
+        assert!(!move_one(&planned(1, &src, root.path(), "link.jpg", Category::Fotos)).ok);
+        fs::remove_file(&src).unwrap();
+        fs::write(&src, b"lokaal").unwrap();
+        fs::remove_dir(root.path().join("Foto's")).unwrap();
+        symlink(outside.path(), root.path().join("Foto's")).unwrap();
+        assert!(ensure_folders(root.path(), &[Category::Fotos]).is_err());
+        assert!(!move_one(&planned(1, &src, root.path(), "link.jpg", Category::Fotos)).ok);
+        assert_eq!(fs::read(src).unwrap(), b"lokaal");
+        assert_eq!(fs::read(real).unwrap(), b"blijft");
     }
 }

@@ -30,9 +30,11 @@ import {
   type Category,
   type CategoryInfo,
   type FileEntry,
+  type UndoResult,
 } from "./lib/api";
 import { buildAnimModel, chunk, thumbOrder, type AnimModel } from "./lib/animModel";
 import { errorText } from "./lib/errors";
+import { isMac } from "./lib/platform";
 import { runOrganize, type Outcome } from "./lib/sorter";
 
 /** Het resultaat van de laatste gelukte scan, met de hoop die erbij hoort. */
@@ -61,17 +63,18 @@ interface Viewer {
 const NONE: ReadonlySet<string> = new Set();
 const NO_FILES: FileEntry[] = [];
 const NO_ERRORS: ErrorItem[] = [];
-/** Miniaturen per aanvraag aan de Windows-shell. */
+/** Miniaturen per aanvraag aan de native voorziening. */
 const THUMB_BATCH = 48;
 /** Pixelmaat van de miniaturen; op een scherm met schaal 2 is het beeldvlak van een tegel 120 px. */
 const THUMB_PX = 128;
 
 function folderNameOf(path: string): string {
-  const parts = path.split(/[\\/]/).filter((part) => part.length > 0);
+  const parts = path.split(path.startsWith("/") ? /\// : /[\\/]/).filter((part) => part.length > 0);
   return parts.length > 0 ? parts[parts.length - 1] : copy.defaultFolder;
 }
 
 function joinPath(root: string, folder: string): string {
+  if (root.startsWith("/")) return root.endsWith("/") ? root + folder : `${root}/${folder}`;
   return root.endsWith("\\") || root.endsWith("/") ? root + folder : `${root}\\${folder}`;
 }
 
@@ -210,8 +213,8 @@ export default function App() {
   useEffect(() => {
     void (async () => {
       try {
-        const [cats, downloads] = await Promise.all([getCategories(), getDownloadsDir()]);
-        setCategories(cats);
+        setCategories(await getCategories());
+        const downloads = await getDownloadsDir();
         await runScan(downloads);
       } catch (e) {
         setError(errorText(e));
@@ -252,7 +255,7 @@ export default function App() {
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
-      if (e.ctrlKey && e.shiftKey && e.key.toLowerCase() === "r") {
+      if ((isMac() ? e.metaKey && !e.ctrlKey : e.ctrlKey && !e.metaKey) && e.shiftKey && !e.altKey && !e.repeat && e.key.toLowerCase() === "r") {
         e.preventDefault(); // anders herlaadt de webview
         setRecording((on) => !on);
       }
@@ -392,11 +395,12 @@ export default function App() {
     }
   };
 
-  const restore = async (root: string, action: (root: string) => Promise<unknown>): Promise<View | null> => {
+  const restore = async (root: string, action: (root: string) => Promise<UndoResult>): Promise<View | null> => {
     setBusy("undoing");
     let failure: string | null = null;
     try {
-      await action(root);
+      const result = await action(root);
+      failure = result.errors.map((outcome) => errorText(outcome.error)).join("\n") || null;
     } catch (e) {
       failure = errorText(e);
     }

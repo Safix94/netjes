@@ -69,14 +69,17 @@ pub fn default_log_dir() -> PathBuf {
     app_data_dir().join("undo")
 }
 
-/// `app_data_dir()/undo/<blake3 hex van het pad in kleine letters>.json`.
+/// `app_data_dir()/undo/<blake3 hex van het pad>.json`; alleen Windows gebruikt kleine letters.
 pub fn log_path(root: &Path) -> PathBuf {
     log_path_in(&default_log_dir(), root)
 }
 
 /// Zoals `log_path`, maar met een eigen logmap (voor tests).
 pub fn log_path_in(log_dir: &Path, root: &Path) -> PathBuf {
+    #[cfg(windows)]
     let key = root.to_string_lossy().to_lowercase();
+    #[cfg(not(windows))]
+    let key = root.to_string_lossy();
     log_dir.join(format!("{}.json", blake3::hash(key.as_bytes()).to_hex()))
 }
 
@@ -193,6 +196,9 @@ pub fn restore_in(
     root: &Path,
     remove_created_folders: bool,
 ) -> io::Result<UndoResult> {
+    if crate::paths::is_forbidden_root(root) {
+        return Err(io::Error::new(ErrorKind::PermissionDenied, OUTSIDE));
+    }
     let Some(mut log) = load_in(log_dir, root)? else {
         return Ok(UndoResult {
             restored: 0,
@@ -278,10 +284,13 @@ fn ensure_parent_inside(path: &Path, root: &Path) -> Result<(), String> {
 /// Verwijdert een door Netjes aangemaakte map, maar enkel als ze onder `root` ligt (nooit `root`
 /// zelf) en leeg is: `remove_dir` weigert een map met inhoud, precies de bescherming die we willen.
 fn remove_created_folder(folder: &str, root: &Path) {
+    if !fs::symlink_metadata(folder).is_ok_and(|metadata| !metadata.is_symlink()) {
+        return;
+    }
     let Ok(folder) = fs::canonicalize(folder) else {
         return;
     };
-    if folder != root && folder.starts_with(root) {
+    if folder != root && folder.starts_with(root) && !crate::paths::is_forbidden_root(&folder) {
         let _ = fs::remove_dir(&folder);
     }
 }
@@ -445,6 +454,7 @@ mod tests {
         assert_eq!(info.created_at_ms, written.created_at_ms);
     }
 
+    #[cfg(windows)]
     #[test]
     fn log_is_written_atomically_under_a_hash_of_the_lowercased_root() {
         let log_dir = tempdir().unwrap();
@@ -747,5 +757,63 @@ mod tests {
         assert!(result.errors.is_empty());
         assert!(info_in(log_dir.path(), root.path()).is_none());
         assert!(load_in(log_dir.path(), root.path()).unwrap().is_none());
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn mac_case_distinct_roots_have_independent_logs() {
+        let logs = tempdir().unwrap();
+        let base = tempdir().unwrap();
+        let upper = base.path().join("Downloads");
+        let lower = base.path().join("downloads");
+        assert_ne!(
+            log_path_in(logs.path(), &upper),
+            log_path_in(logs.path(), &lower)
+        );
+        write_planned_in(logs.path(), &upper, &[], &[]).unwrap();
+        write_planned_in(logs.path(), &lower, &[], &[]).unwrap();
+        assert_eq!(
+            load_in(logs.path(), &upper).unwrap().unwrap().root,
+            upper.to_string_lossy()
+        );
+        assert_eq!(
+            load_in(logs.path(), &lower).unwrap().unwrap().root,
+            lower.to_string_lossy()
+        );
+        assert_eq!(fs::read_dir(logs.path()).unwrap().count(), 2);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn restore_refuses_symlink_sources_and_escaped_parents() {
+        use std::os::unix::fs::symlink;
+        let logs = tempdir().unwrap();
+        let root = tempdir().unwrap();
+        let outside = tempdir().unwrap();
+        let (src, dest) = organize_one_photo(logs.path(), root.path());
+        fs::remove_file(&dest).unwrap();
+        let real = outside.path().join("a.jpg");
+        fs::write(&real, b"veilig").unwrap();
+        symlink(&real, &dest).unwrap();
+        let result = restore_in(logs.path(), root.path(), false).unwrap();
+        assert_eq!(result.restored, 0);
+        assert_eq!(result.errors.len(), 1);
+        assert!(!src.exists());
+        assert!(fs::symlink_metadata(&dest).unwrap().is_symlink());
+        fs::remove_file(&dest).unwrap();
+        fs::remove_dir(dest.parent().unwrap()).unwrap();
+        symlink(outside.path(), dest.parent().unwrap()).unwrap();
+        let result = restore_in(logs.path(), root.path(), false).unwrap();
+        assert_eq!(result.restored, 0);
+        assert_eq!(result.errors.len(), 1);
+        assert_eq!(result.errors[0].error.as_deref(), Some(OUTSIDE));
+        assert!(!src.exists());
+        assert!(
+            fs::symlink_metadata(dest.parent().unwrap())
+                .unwrap()
+                .is_symlink()
+        );
+        assert_eq!(fs::read(&dest).unwrap(), b"veilig");
+        assert_eq!(fs::read(real).unwrap(), b"veilig");
     }
 }

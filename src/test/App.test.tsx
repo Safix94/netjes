@@ -1,3 +1,4 @@
+import "./canvas-mock";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { useEffect } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -85,6 +86,7 @@ function mockMoves(failing: string[] = []) {
 }
 
 beforeEach(() => {
+  vi.spyOn(window.navigator, "platform", "get").mockReturnValue("Win32");
   vi.mocked(api.getCategories).mockResolvedValue(CATEGORIES);
   vi.mocked(api.getDownloadsDir).mockResolvedValue(ROOT);
   vi.mocked(api.scan).mockImplementation(async (root) => scanned(root, "fotos", "fotos", "videos", "duplicaten"));
@@ -97,9 +99,70 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   vi.resetAllMocks();
+  vi.restoreAllMocks();
 });
 
 describe("App", () => {
+  it.each([
+    ["MacIntel", "/Users/test/Invoices\\2026", "Invoices\\2026"],
+    ["MacIntel", "/Users/test/Downloads\\", "Downloads\\"],
+    ["MacIntel", "/Users/test/Invoices\\2026/", "Invoices\\2026"],
+    ["MacIntel", "/Users/test/Downloads/", "Downloads"],
+    ["Win32", `${ROOT}\\`, "Downloads"],
+    ["Win32", "C:/Users/Test/Downloads/", "Downloads"],
+    ["Win32", "C:\\Users/Test\\Downloads/", "Downloads"],
+  ])("shows the native folder name in the heading for %s root %s", async (platform, root, expected) => {
+    vi.spyOn(window.navigator, "platform", "get").mockReturnValue(platform);
+    vi.mocked(api.getDownloadsDir).mockResolvedValue(root);
+    render(<App />);
+    await screen.findByText(copy.statusReady(4));
+    expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent(`Mijn ${expected} opruimen`);
+  });
+
+  it("uses Command on Mac, announces the shortcut and reveals folders in Finder", async () => {
+    vi.spyOn(window.navigator, "platform", "get").mockReturnValue("MacIntel");
+    vi.mocked(api.getDownloadsDir).mockResolvedValue("/Users/test/Downloads");
+    vi.mocked(api.listFolderFiles).mockResolvedValue([file("fotos")]);
+    render(<App />);
+    await screen.findByText(copy.statusReady(4));
+    expect(button(copy.recording)).toHaveAttribute("aria-keyshortcuts", "Meta+Shift+R");
+    expect(button(copy.recording)).toHaveAttribute("title", expect.stringContaining("Cmd+Shift+R"));
+    fireEvent.keyDown(window, { key: "R", ctrlKey: true, shiftKey: true });
+    expect(screen.queryByText(copy.disorganize)).not.toBeInTheDocument();
+    fireEvent.keyDown(window, { key: "R", metaKey: true, shiftKey: true });
+    expect(await screen.findByText(copy.disorganize)).toBeInTheDocument();
+    fireEvent.click(document.querySelector('[data-cat="fotos"]')!);
+    fireEvent.click(await screen.findByRole("button", { name: "Toon in Finder" }));
+    expect(api.revealInExplorer).toHaveBeenCalledWith("/Users/test/Downloads/Foto's");
+  });
+
+  it("keeps the permission recovery message and lets the user retry by choosing a folder", async () => {
+    const denied = "Geen toegang tot deze map. Geef Netjes toegang via Systeeminstellingen > Privacy en beveiliging > Bestanden en mappen en probeer opnieuw.";
+    vi.mocked(api.getDownloadsDir).mockRejectedValueOnce(denied);
+    vi.mocked(api.chooseFolder).mockResolvedValue(ROOT);
+    render(<App />);
+    expect(await screen.findByText(denied)).toBeInTheDocument();
+    expect(button(copy.chooseFolder)).toBeEnabled();
+    fireEvent.click(button(copy.chooseFolder));
+    expect(await screen.findByText(copy.statusReady(4))).toBeInTheDocument();
+    expect(screen.queryByText(denied)).not.toBeInTheDocument();
+    expect(document.querySelector('[data-cat="fotos"]')).toBeInTheDocument();
+  });
+
+  it.each([
+    ["MacIntel", "/Users/test/Downloads\\", "/Users/test/Downloads\\/Foto's"],
+    ["Win32", `${ROOT}\\`, `${ROOT}\\Foto's`],
+    ["Win32", `${ROOT}/`, `${ROOT}/Foto's`],
+  ])("reveals the correct folder for %s root %s", async (platform, root, expected) => {
+    vi.spyOn(window.navigator, "platform", "get").mockReturnValue(platform);
+    vi.mocked(api.getDownloadsDir).mockResolvedValue(root);
+    vi.mocked(api.listFolderFiles).mockResolvedValue([file("fotos")]);
+    render(<App />);
+    await screen.findByText(copy.statusReady(4));
+    fireEvent.click(document.querySelector('[data-cat="fotos"]')!);
+    fireEvent.click(await screen.findByRole("button", { name: copy.reveal }));
+    expect(api.revealInExplorer).toHaveBeenCalledWith(expected);
+  });
   it("scans the Downloads folder on start and shows the real numbers", async () => {
     render(<App />);
     expect(await screen.findByText(copy.statusReady(4))).toBeInTheDocument();
@@ -165,6 +228,49 @@ describe("App", () => {
     await waitFor(() => expect(api.scan).toHaveBeenCalledTimes(2));
   });
 
+  it.each([
+    [copy.undo, "undoOrganize"],
+    [copy.disorganize, "disorganize"],
+    [copy.resort, "disorganize"],
+  ] as const)("keeps partial restore errors after a successful rescan and allows retry via %s", async (label, action) => {
+    vi.spyOn(window.navigator, "platform", "get").mockReturnValue("MacIntel");
+    mockMoves();
+    vi.mocked(api.checkUndo).mockResolvedValue({ count: 2, created_at_ms: 1 });
+    vi.mocked(api.confirm).mockResolvedValue(true);
+    vi.mocked(api[action])
+      .mockResolvedValueOnce({
+        restored: 1,
+        errors: [
+          { id: 2, ok: false, dest: null, error: copy.permissionDenied },
+          { id: 3, ok: false, dest: null, error: copy.rescanFirst },
+        ],
+      })
+      .mockResolvedValueOnce({ restored: 2, errors: [] });
+    render(<App />);
+    await screen.findByText(copy.statusReady(4));
+    fireEvent.click(button(copy.recording));
+    fireEvent.click(button(label));
+
+    await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent(copy.permissionDenied));
+    expect(api.scan).toHaveBeenCalledTimes(2);
+    expect(screen.getByRole("status")).toHaveTextContent(copy.rescanFirst);
+    expect(screen.getByRole("status")).toHaveClass("error");
+    expect(screen.queryByText(copy.statusDone)).not.toBeInTheDocument();
+    expect(api.beginOrganize).not.toHaveBeenCalled();
+    expect(button(label)).toBeEnabled();
+    expect(button(copy.chooseFolder)).toBeEnabled();
+    expect(button(copy.undo)).toBeEnabled();
+
+    vi.mocked(api.checkUndo).mockResolvedValue(null);
+    fireEvent.click(button(label));
+    await screen.findByText(label === copy.resort ? copy.statusDone : copy.statusReady(4));
+    expect(api[action]).toHaveBeenCalledTimes(2);
+    expect(api.scan).toHaveBeenCalledTimes(3);
+    expect(screen.getByRole("status")).not.toHaveTextContent(copy.permissionDenied);
+    expect(screen.getByRole("status")).not.toHaveClass("error");
+    expect(button(copy.undo)).toBeDisabled();
+  });
+
   it("shows the generic Dutch message instead of an English plugin error", async () => {
     vi.mocked(api.listFolderFiles).mockRejectedValue(new Error("failed to open path: access denied"));
     render(<App />);
@@ -189,6 +295,9 @@ describe("App", () => {
   it("toggles recording mode with Ctrl+Shift+R and with the Opname button", async () => {
     render(<App />);
     await screen.findByText(copy.statusReady(4));
+    expect(screen.queryByText(copy.disorganize)).not.toBeInTheDocument();
+    expect(button(copy.recording)).toHaveAttribute("aria-keyshortcuts", "Control+Shift+R");
+    fireEvent.keyDown(window, { key: "R", metaKey: true, shiftKey: true });
     expect(screen.queryByText(copy.disorganize)).not.toBeInTheDocument();
     fireEvent.keyDown(window, { key: "R", ctrlKey: true, shiftKey: true });
     expect(await screen.findByText(copy.disorganize)).toBeInTheDocument();
